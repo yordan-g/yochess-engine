@@ -1,3 +1,5 @@
 quarkus:
   devservices:
     enabled: false
+  log:
+    level: DEBUG
