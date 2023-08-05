@@ -9,11 +9,10 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import jakarta.websocket.Decoder
 import jakarta.websocket.Encoder
 import jakarta.websocket.EndpointConfig
-import java.time.LocalDateTime
 import java.io.Reader
 import java.io.Writer
 
-class MessageEnDecoder : Encoder.TextStream<Message>, Decoder.TextStream<Message> {
+class MessageEnDecoder : Encoder.TextStream<MoveRequest>, Decoder.TextStream<MoveRequest> {
 
     private val objectMapper = ObjectMapper()
         .registerModule(JavaTimeModule())
@@ -24,22 +23,37 @@ class MessageEnDecoder : Encoder.TextStream<Message>, Decoder.TextStream<Message
 
     override fun destroy() {}
 
-    override fun encode(message: Message, writer: Writer) {
-        writer.append(objectMapper.writeValueAsString(message))
+    override fun encode(moveRequest: MoveRequest, writer: Writer) {
+        writer.append(objectMapper.writeValueAsString(moveRequest))
     }
 
-    override fun decode(reader: Reader): Message {
-        return objectMapper.readValue(reader, Message::class.java)
+    override fun decode(reader: Reader): MoveRequest {
+        return objectMapper.readValue(reader, MoveRequest::class.java)
     }
 }
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
-data class Message(
-    @JsonProperty("message")
-    val message: String,
-    @JsonProperty("sender")
-    val sender: String? = null,
-    @JsonProperty("sentAt")
-    val sentAt: LocalDateTime? = LocalDateTime.now()
+data class MoveRequest(
+    @JsonProperty("piece")
+    val piece: String,
+    @JsonProperty("squareFrom")
+    val squareFrom: String? = null,
+    @JsonProperty("squareTo")
+    val squareTo: String? = null,
+    @JsonProperty("valid")
+    val valid: Boolean? = null
 )
+
+//@JsonInclude(JsonInclude.Include.NON_NULL)
+//@JsonIgnoreProperties(ignoreUnknown = true)
+//data class MoveResponse(
+//    @JsonProperty("message")
+//    val piece: String,
+//    @JsonProperty("squareFrom")
+//    val squareFrom: String? = null,
+//    @JsonProperty("squareTo")
+//    val squareTo: String? = null,
+//    @JsonProperty("valid")
+//    val valid: Boolean = false
+//)

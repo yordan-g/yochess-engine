@@ -29,7 +29,7 @@ class WebSocket {
     fun onClose(session: Session?, @PathParam("username") username: String) {
         logger.info("Closing Connection ...")
         sessions.remove(username)
-        broadcast(Message("User $username left"))
+        broadcast(MoveRequest("User $username left"))
     }
 
     @OnError
@@ -37,18 +37,25 @@ class WebSocket {
         logger.info("Error Received ...")
         logger.info(throwable)
         sessions.remove(username)
-        broadcast(Message("User $username left on error: $throwable"))
+        broadcast(MoveRequest("User $username left on error: $throwable"))
     }
 
     @OnMessage
-    fun onMessage(message: Message, @PathParam("username") username: String) {
-        logger.info("Message Received: ($message)")
-        broadcast(Message("User $username joined"))
+    fun onMessage(moveRequest: MoveRequest, @PathParam("username") username: String) {
+        logger.info("Message Received: $moveRequest")
+        broadcast(
+            MoveRequest(
+                moveRequest.piece,
+                moveRequest.squareFrom,
+                moveRequest.squareTo,
+                true
+            )
+        )
     }
 
-    private fun broadcast(message: Message?) {
+    private fun broadcast(moveRequest: MoveRequest?) {
         sessions.values.forEach(Consumer<Session> { s: Session ->
-            s.getAsyncRemote().sendObject(message) { result ->
+            s.getAsyncRemote().sendObject(moveRequest) { result ->
                 if (result.getException() != null) {
                     System.out.println("Unable to send message: " + result.getException())
                 }
