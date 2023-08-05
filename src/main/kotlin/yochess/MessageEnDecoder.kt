@@ -32,6 +32,26 @@ class MessageEnDecoder : Encoder.TextStream<MoveRequest>, Decoder.TextStream<Mov
     }
 }
 
+class InitEnDecoder : Encoder.TextStream<Init>, Decoder.TextStream<Init> {
+
+    private val objectMapper = ObjectMapper()
+        .registerModule(JavaTimeModule())
+        .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
+        .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
+
+    override fun init(config: EndpointConfig) {}
+
+    override fun destroy() {}
+
+    override fun encode(init: Init, writer: Writer) {
+        writer.append(objectMapper.writeValueAsString(init))
+    }
+
+    override fun decode(reader: Reader): Init {
+        return objectMapper.readValue(reader, Init::class.java)
+    }
+}
+
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class MoveRequest(

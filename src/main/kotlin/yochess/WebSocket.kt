@@ -1,5 +1,8 @@
 package yochess
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonInclude
+import com.fasterxml.jackson.annotation.JsonProperty
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.*
 import jakarta.websocket.server.PathParam
@@ -14,7 +17,9 @@ import java.util.function.Consumer
     encoders = [MessageEnDecoder::class],
     decoders = [MessageEnDecoder::class]
 )
-class WebSocket {
+class WebSocket(
+    private val moveService: MoveService
+) {
     private val logger: Logger = Logger.getLogger(this::class.java)
 
     private val sessions: MutableMap<String, Session> = ConcurrentHashMap<String, Session>()
@@ -23,6 +28,18 @@ class WebSocket {
     fun onOpen(session: Session, @PathParam("username") username: String) {
         logger.info("Initiating Connection: $username")
         sessions[username] = session
+
+//        if (sessions.size < 2) {
+//            sessions[username] = session
+//
+//            if (sessions.size == 1) {
+////                session.asyncRemote.sendObject(Init(color = "b"))
+//                session.asyncRemote.sendObject(MoveRequest(piece = "r"))
+//            } else {
+////                session.asyncRemote.sendObject(Init(color = "w"))
+//                session.asyncRemote.sendObject(MoveRequest(piece = "r"))
+//            }
+//        }
     }
 
     @OnClose
@@ -63,3 +80,10 @@ class WebSocket {
         })
     }
 }
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class Init(
+    @JsonProperty("color")
+    val color: String,
+)
