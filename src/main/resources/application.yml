@@ -2,4 +2,5 @@ quarkus:
 #  devservices:
 #    enabled: false
   log:
-    level: DEBUG
+    level:
+      yochess: DEBUG

@@ -14,8 +14,8 @@ import java.util.function.Consumer
 @ApplicationScoped
 @ServerEndpoint(
     "/chess/{username}",
-    encoders = [MessageEnDecoder::class],
-    decoders = [MessageEnDecoder::class]
+    encoders = [MessageEnDecoder::class, InitEnDecoder::class],
+    decoders = [MessageEnDecoder::class, InitEnDecoder::class]
 )
 class WebSocket(
     private val moveService: MoveService
@@ -26,20 +26,16 @@ class WebSocket(
 
     @OnOpen
     fun onOpen(session: Session, @PathParam("username") username: String) {
-        logger.info("Initiating Connection: $username")
-        sessions[username] = session
+        if (sessions.size < 2) {
+            logger.info("Initiating Connection: $username")
 
-//        if (sessions.size < 2) {
-//            sessions[username] = session
-//
-//            if (sessions.size == 1) {
-////                session.asyncRemote.sendObject(Init(color = "b"))
-//                session.asyncRemote.sendObject(MoveRequest(piece = "r"))
-//            } else {
-////                session.asyncRemote.sendObject(Init(color = "w"))
-//                session.asyncRemote.sendObject(MoveRequest(piece = "r"))
-//            }
-//        }
+            if (sessions.isEmpty()) {
+                session.asyncRemote.sendObject(Init(color = "w"))
+            } else {
+                session.asyncRemote.sendObject(Init(color = "b"))
+            }
+            sessions[username] = session
+        }
     }
 
     @OnClose
@@ -54,11 +50,17 @@ class WebSocket(
         logger.info("Error Received ...")
         logger.info(throwable)
         sessions.remove(username)
+        // TODO: Messing the state in the UI when closing
         broadcast(MoveRequest("User $username left on error: $throwable"))
     }
 
     @OnMessage
     fun onMessage(moveRequest: MoveRequest, @PathParam("username") username: String) {
+        if (moveRequest.piece == "z") {
+            sessions.values.forEach { s -> s.close() }
+            return
+        }
+
         logger.info("Message Received: $moveRequest")
         broadcast(
             MoveRequest(
