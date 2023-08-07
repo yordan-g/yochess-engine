@@ -42,7 +42,7 @@ class WebSocket(
     fun onClose(session: Session?, @PathParam("username") username: String) {
         logger.info("Closing Connection ...")
         sessions.remove(username)
-        broadcast(MoveRequest("User $username left"))
+//        broadcast(MoveRequest("User $username left"))
     }
 
     @OnError
@@ -50,7 +50,6 @@ class WebSocket(
         logger.info("Error Received ...")
         logger.info(throwable)
         sessions.remove(username)
-        // TODO: Messing the state in the UI when closing
         broadcast(MoveRequest("User $username left on error: $throwable"))
     }
 
