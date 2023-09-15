@@ -1,15 +1,13 @@
 package yochess
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties
-import com.fasterxml.jackson.annotation.JsonInclude
-import com.fasterxml.jackson.annotation.JsonProperty
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.*
 import jakarta.websocket.server.PathParam
 import jakarta.websocket.server.ServerEndpoint
 import org.jboss.logging.Logger
+import yochess.dtos.Init
+import yochess.dtos.Move
 import java.util.concurrent.*
-import java.util.function.Consumer
 
 @ApplicationScoped
 @ServerEndpoint(
@@ -42,7 +40,6 @@ class WebSocket(
     fun onClose(session: Session?, @PathParam("username") username: String) {
         logger.info("Closing Connection ...")
         sessions.remove(username)
-//        broadcast(MoveRequest("User $username left"))
     }
 
     @OnError
@@ -50,41 +47,29 @@ class WebSocket(
         logger.info("Error Received ...")
         logger.info(throwable)
         sessions.remove(username)
-        broadcast(MoveRequest("User $username left on error: $throwable"))
+        broadcast(Move("User $username left on error: $throwable"))
     }
 
     @OnMessage
-    fun onMessage(moveRequest: MoveRequest, @PathParam("username") username: String) {
-        if (moveRequest.piece == "z") {
-            sessions.values.forEach { s -> s.close() }
-            return
-        }
-
-        logger.info("Message Received: $moveRequest")
+    fun onMessage(move: Move, @PathParam("username") username: String) {
+        logger.info("Message Received: $move")
         broadcast(
-            MoveRequest(
-                moveRequest.piece,
-                moveRequest.squareFrom,
-                moveRequest.squareTo,
+            Move(
+                move.piece,
+                move.squareFrom,
+                move.squareTo,
                 true
             )
         )
     }
 
-    private fun broadcast(moveRequest: MoveRequest?) {
-        sessions.values.forEach(Consumer<Session> { s: Session ->
-            s.getAsyncRemote().sendObject(moveRequest) { result ->
-                if (result.getException() != null) {
-                    System.out.println("Unable to send message: " + result.getException())
+    private fun broadcast(move: Move?) {
+        sessions.values.forEach { session: Session ->
+            session.asyncRemote.sendObject(move) { result ->
+                if (result.exception != null) {
+                    logger.error("Unable to send message: " + result.exception)
                 }
             }
-        })
+        }
     }
 }
-
-@JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonIgnoreProperties(ignoreUnknown = true)
-data class Init(
-    @JsonProperty("color")
-    val color: String,
-)
