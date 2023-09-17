@@ -1,4 +1,4 @@
-package yochess
+package yochess.dtos
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -7,8 +7,6 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
 import jakarta.websocket.Decoder
 import jakarta.websocket.Encoder
 import jakarta.websocket.EndpointConfig
-import yochess.dtos.Init
-import yochess.dtos.Move
 import java.io.Reader
 import java.io.Writer
 
@@ -32,7 +30,7 @@ class MessageEnDecoder : Encoder.TextStream<Move>, Decoder.TextStream<Move> {
     }
 }
 
-class InitEnDecoder : Encoder.TextStream<Init>, Decoder.TextStream<Init> {
+class InitEnDecoder : Encoder.TextStream<InitMessage>, Decoder.TextStream<InitMessage> {
 
     private val objectMapper = ObjectMapper()
         .registerModule(JavaTimeModule())
@@ -43,11 +41,11 @@ class InitEnDecoder : Encoder.TextStream<Init>, Decoder.TextStream<Init> {
 
     override fun destroy() {}
 
-    override fun encode(init: Init, writer: Writer) {
-        writer.append(objectMapper.writeValueAsString(init))
+    override fun encode(initMessage: InitMessage, writer: Writer) {
+        writer.append(objectMapper.writeValueAsString(initMessage))
     }
 
-    override fun decode(reader: Reader): Init {
-        return objectMapper.readValue(reader, Init::class.java)
+    override fun decode(reader: Reader): InitMessage {
+        return objectMapper.readValue(reader, InitMessage::class.java)
     }
 }
