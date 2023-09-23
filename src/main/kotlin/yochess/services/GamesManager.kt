@@ -49,14 +49,11 @@ class DefaultGamesService : GamesManager {
     override fun broadcastMove(move: Move, username: String) {
         logger.info("Message Received: $move")
 
-        arrayOf(activeGames[move.gameId]?.player1, activeGames[move.gameId]?.player2).forEach {
-            it?.asyncRemote?.sendObject(move) { result ->
-                if (result.exception != null) {
-                    logger.error("Unable to send message: " + result.exception)
-                }
-            }
+        activeGames[move.gameId]?.let {
+            it.player1.asyncRemote.sendObject(move)
+            it.player2.asyncRemote.sendObject(move)
         }
     }
 }
 
-data class Game(var player1: Session, var player2: Session? = null)
+data class Game(var player1: Session, var player2: Session)
