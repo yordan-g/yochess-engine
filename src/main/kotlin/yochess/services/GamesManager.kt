@@ -13,7 +13,7 @@ class MoveService {
 }
 
 interface GamesManager {
-    fun addPlayerToGame(player: Session): InitMessage
+    fun addPlayerToGame(player: Session): String
     fun broadcastMove(move: Move, username: String)
     fun closeGame(id: String, session: Session)
 }
@@ -24,16 +24,16 @@ class DefaultGamesService : GamesManager {
     private val waitingPlayers: ConcurrentLinkedQueue<Session> = ConcurrentLinkedQueue()
     private val activeGames: MutableMap<String, Game> = ConcurrentHashMap()
 
-    override fun addPlayerToGame(player: Session): InitMessage = when (val matchedPlayer = waitingPlayers.poll()) {
-        null -> InitMessage(color = "w", gameId = "gameId").also {
+    override fun addPlayerToGame(player: Session): String = when (val matchedPlayer = waitingPlayers.poll()) {
+        null -> "Waiting for game".also {
             waitingPlayers.offer(player)
-            player.asyncRemote.sendObject(it)
+            player.asyncRemote.sendObject(InitMessage(gameId = it))
         }
 
-        else -> InitMessage(color = "b", gameId = UUID.randomUUID().toString()).also {
-            activeGames[it.gameId] = Game(player, matchedPlayer)
-            matchedPlayer.asyncRemote.sendObject(it)
-            player.asyncRemote.sendObject(it)
+        else -> UUID.randomUUID().toString().also {
+            activeGames[it] = Game(player, matchedPlayer)
+            matchedPlayer.asyncRemote.sendObject(InitMessage(type = WebSocketPhase.START, color = "w", gameId = it))
+            player.asyncRemote.sendObject(InitMessage(type = WebSocketPhase.START, color = "b", gameId = it))
         }
     }.also {
         logger.info("Player connected to game: $it")
@@ -54,6 +54,11 @@ class DefaultGamesService : GamesManager {
             it.player2.asyncRemote.sendObject(move)
         }
     }
+}
+
+enum class WebSocketPhase {
+    INIT,
+    START
 }
 
 data class Game(var player1: Session, var player2: Session)
