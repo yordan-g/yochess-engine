@@ -2,20 +2,18 @@ package yochess.services
 
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.Session
+import jakarta.ws.rs.NotFoundException
 import org.jboss.logging.Logger
 import yochess.dtos.InitMessage
 import yochess.dtos.Move
 import java.util.*
 import java.util.concurrent.*
 
-@ApplicationScoped
-class MoveService {
-}
-
 interface GamesManager {
     fun addPlayerToGame(player: Session): String
-    fun broadcastMove(move: Move, username: String)
+    fun broadcastMove(move: Move)
     fun closeGame(id: String, session: Session)
+    fun getGame(gameId: String): Game
 }
 
 @ApplicationScoped
@@ -46,12 +44,16 @@ class DefaultGamesService : GamesManager {
         logger.info("Closing Connection ... gameId: $id")
     }
 
-    override fun broadcastMove(move: Move, username: String) {
-        logger.info("Message Received: $move")
+    override fun getGame(gameId: String): Game {
+        return activeGames[gameId] ?: throw NotFoundException("error")
+    }
 
-        activeGames[move.gameId]?.let {
-            it.player1.asyncRemote.sendObject(move)
-            it.player2.asyncRemote.sendObject(move)
+    override fun broadcastMove(moveResult: Move) {
+        logger.info("Message Received: $moveResult, valid: ${moveResult.valid}")
+
+        activeGames[moveResult.gameId]?.let {
+            it.player1.asyncRemote.sendObject(moveResult)
+            it.player2.asyncRemote.sendObject(moveResult)
         }
     }
 }
@@ -61,4 +63,9 @@ enum class WebSocketPhase {
     START
 }
 
-data class Game(var player1: Session, var player2: Session)
+data class Game(
+    var player1: Session,
+    var player2: Session,
+) {
+    val state: GameState = GameState()
+}

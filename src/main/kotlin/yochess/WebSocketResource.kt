@@ -10,6 +10,7 @@ import yochess.dtos.MessageEnDecoder
 import yochess.dtos.Move
 import yochess.services.GamesManager
 import yochess.services.MoveService
+import yochess.services.toXY
 
 @ApplicationScoped
 @ServerEndpoint(
@@ -55,9 +56,17 @@ class WebSocketResource(
 
     @OnMessage
     fun onMessage(
-        move: Move,
+        moveRequest: Move,
         @PathParam("username") username: String
     ) {
-        gamesService.broadcastMove(move, username)
+        val moveResult = moveService.makeMove(
+            gameState = gamesService.getGame(moveRequest.gameId).state,
+            from = moveRequest.squareFrom.toXY(),
+            to = moveRequest.squareTo.toXY(),
+            moveRequest = moveRequest
+        )
+        gamesService.broadcastMove(
+            moveResult
+        )
     }
 }

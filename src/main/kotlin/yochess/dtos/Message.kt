@@ -24,11 +24,17 @@ data class Move(
     @JsonProperty("piece")
     val piece: String,
     @JsonProperty("squareFrom")
-    val squareFrom: String? = null,
+    val squareFrom: String,
     @JsonProperty("squareTo")
-    val squareTo: String? = null,
+    val squareTo: String,
     @JsonProperty("gameId")
     val gameId: String,
     @JsonProperty("valid")
-    val valid: Boolean? = null
+    val valid: Boolean? = null,
+    @JsonProperty("position")
+    val position: String? = null,
+    @JsonProperty("enPassantCapture")
+    val enPassantCapture: String? = null,
+    @JsonProperty("promotion")
+    val promotion: String? = null
 )
