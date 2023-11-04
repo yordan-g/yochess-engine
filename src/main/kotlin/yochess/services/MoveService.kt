@@ -32,6 +32,7 @@ sealed interface Piece {
     fun clone(): Piece
     fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move
     fun signature(): String
+    fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean
 }
 
 class Pawn(override val color: Color) : Piece {
@@ -99,8 +100,9 @@ class Pawn(override val color: Color) : Piece {
 
         // 6. Is the king under a check after move
         gameState.getTheKing(color)
-            .isTheKingSafeAfterPieceMoved(gameState, capturedPiece, from, to, enPassantCapturePosition)
+            .isTheKingSafeAfterPieceMoved(gameState)
             .also {
+                if (!it) gameState.revertMove(capturedPiece, from, to, enPassantCapturePosition)
                 moveResult = moveRequest.copy(valid = it, enPassantCapture = enPassantCapturePosition?.toFileRank() ?: null)
             }
 
@@ -119,30 +121,20 @@ class Pawn(override val color: Color) : Piece {
     }
 
     override fun signature(): String = if (color == Color.W) "WP" else "BP"
+
+    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
+        return false
+    }
 }
 
 class Queen(override val color: Color) : Piece {
-    override fun clone() = Queen(color)
 
     override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         gameState.enPassantTarget = null
-        var moveResult = moveRequest.copy(valid = false)
-        var capturedPiece: Piece
-
-        if (isValidMove(gameState, from, to)) {
-            gameState.makeMove(from, to).also { capturedPiece = it }
-
-            gameState.getTheKing(color)
-                .isTheKingSafeAfterPieceMoved(gameState, capturedPiece, from, to, null)
-                .also {
-                    moveResult = moveRequest.copy(valid = it)
-                }
-        }
-
-        return moveResult
+        return gameState.tryMakeMove(this, from, to, moveRequest)
     }
 
-    private fun isValidMove(gameState: GameState, from: XY, to: XY): Boolean {
+    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
         val dx = to.x - from.x
         val dy = to.y - from.y
 
@@ -159,7 +151,7 @@ class Queen(override val color: Color) : Piece {
 
         // Check the path for other pieces until the destination
         while (currentX != to.x || currentY != to.y) {
-            if (gameState.board[currentY][currentX] != EM) {
+            if (board[currentY][currentX] != EM) {
                 return false // Path is blocked
             }
 
@@ -167,13 +159,14 @@ class Queen(override val color: Color) : Piece {
             currentY += stepY
         }
 
-        val destinationPiece = gameState.board[to]
+        val destinationPiece = board[to]
         // Can't capture own pieces
         if (destinationPiece != EM && destinationPiece.color == this.color) return false
 
         return true
     }
 
+    override fun clone() = Queen(color)
     override fun signature(): String = if (color == Color.W) "WQ" else "BQ"
 }
 
@@ -193,26 +186,7 @@ class King(override val color: Color) : Piece {
         return moveRequest.copy(valid = true)
     }
 
-    fun isTheKingSafeAfterPieceMoved(gameState: GameState, capturedPiece: Piece, from: XY, to: XY, enPassantCapturePosition: XY?): Boolean {
-        return when (isKingUnderThreat(gameState)) {
-            true -> {
-                // revert move
-                if (enPassantCapturePosition != null) {
-                    gameState.board[from] = gameState.board[to].clone()
-                    gameState.board[to] = EM
-                    gameState.board[enPassantCapturePosition] = capturedPiece.clone()
-                } else {
-                    gameState.board[from] = gameState.board[to].clone()
-                    gameState.board[to] = capturedPiece.clone()
-                }
-                false
-            }
-
-            false -> true
-        }
-    }
-
-    private fun isKingUnderThreat(gameState: GameState): Boolean {
+    fun isTheKingSafeAfterPieceMoved(gameState: GameState): Boolean {
         val kingPosition = gameState.getKingPosition(color)
         val directions = listOf(
             XY(0, -1),   // North
@@ -233,14 +207,14 @@ class King(override val color: Color) : Piece {
                 if (!isValidSquare(moveTo)) break
                 val piece = gameState.board[moveTo]
 
-                if (isPinningPiece(piece, kingPosition, moveTo)) return true
+                if (isPinningPiece(piece, kingPosition, moveTo)) return false
                 if (isAlliedPiece(piece) || piece !is EM) break
 
                 distance++
             }
         }
 
-        return false
+        return true
     }
 
     private fun isValidSquare(square: XY): Boolean = square.x in 0..7 && square.y in 0..7
@@ -275,30 +249,20 @@ class King(override val color: Color) : Piece {
     private fun isAlliedPiece(piece: Piece): Boolean = piece !is EM && piece.color == this.color
 
     override fun signature(): String = if (color == Color.W) "WK" else "BK"
+
+    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
+        return false
+    }
 }
 
 class Rook(override val color: Color) : Piece {
-    override fun clone() = Rook(color)
 
     override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         gameState.enPassantTarget = null
-        var moveResult = moveRequest.copy(valid = false)
-        var capturedPiece: Piece
-
-        if (isValidMove(gameState, from, to)) {
-            capturedPiece = gameState.makeMove(from, to)
-
-            gameState.getTheKing(color)
-                .isTheKingSafeAfterPieceMoved(gameState, capturedPiece, from, to, null)
-                .also {
-                    moveResult = moveRequest.copy(valid = it)
-                }
-        }
-
-        return moveResult
+        return gameState.tryMakeMove(this, from, to, moveRequest)
     }
 
-    private fun isValidMove(gameState: GameState, from: XY, to: XY): Boolean {
+    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
         val dx = to.x - from.x
         val dy = to.y - from.y
 
@@ -315,7 +279,7 @@ class Rook(override val color: Color) : Piece {
 
         // Check the path for other pieces
         while (currentX != to.x || currentY != to.y) {
-            if (gameState.board[XY(currentX, currentY)] != EM) {
+            if (board[XY(currentX, currentY)] != EM) {
                 return false // Path is blocked
             }
 
@@ -324,37 +288,24 @@ class Rook(override val color: Color) : Piece {
         }
 
         // Check if the destination square is occupied by a friendly piece
-        val destinationPiece = gameState.board[to]
+        val destinationPiece = board[to]
         if (destinationPiece != EM && destinationPiece.color == this.color) return false
 
         return true
     }
 
+    override fun clone() = Rook(color)
     override fun signature(): String = if (color == Color.W) "WR" else "BR"
 }
 
 class Bishop(override val color: Color) : Piece {
-    override fun clone() = Bishop(color)
 
     override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         gameState.enPassantTarget = null
-        var moveResult = moveRequest.copy(valid = false)
-        var capturedPiece: Piece
-
-        if (isValidMove(gameState, from, to)) {
-            capturedPiece = gameState.makeMove(from, to)
-
-            gameState.getTheKing(color)
-                .isTheKingSafeAfterPieceMoved(gameState, capturedPiece, from, to, null)
-                .also {
-                    moveResult = moveRequest.copy(valid = it)
-                }
-        }
-
-        return moveResult
+        return gameState.tryMakeMove(this, from, to, moveRequest)
     }
 
-    private fun isValidMove(gameState: GameState, from: XY, to: XY): Boolean {
+    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
         val dx = to.x - from.x
         val dy = to.y - from.y
 
@@ -371,7 +322,7 @@ class Bishop(override val color: Color) : Piece {
 
         // Check the path for other pieces until the destination
         while (currentX != to.x || currentY != to.y) {
-            if (gameState.board[currentY][currentX] != EM) {
+            if (board[currentY][currentX] != EM) {
                 return false // Path is blocked
             }
 
@@ -379,67 +330,50 @@ class Bishop(override val color: Color) : Piece {
             currentY += stepY
         }
 
-        val destinationPiece = gameState.board[to]
+        val destinationPiece = board[to]
         // Can't capture own pieces
         if (destinationPiece != EM && destinationPiece.color == this.color) return false
 
         return true
     }
 
+    override fun clone() = Bishop(color)
     override fun signature(): String = if (color == Color.W) "WB" else "BB"
 }
 
 class Knight(override val color: Color) : Piece {
-    override fun clone() = Knight(color)
 
     override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         gameState.enPassantTarget = null
-        var moveResult = moveRequest.copy(valid = false)
-        var capturedPiece: Piece = EM
-
-        if (isValidMove(gameState, from, to)) {
-            capturedPiece = gameState.makeMove(from, to)
-
-            gameState.getTheKing(color)
-                .isTheKingSafeAfterPieceMoved(gameState, capturedPiece, from, to, null)
-                .also {
-                    moveResult = moveRequest.copy(valid = it)
-                }
-        }
-
-        return moveResult
+        return gameState.tryMakeMove(this, from, to, moveRequest)
     }
 
-    private fun isValidMove(gameState: GameState, from: XY, to: XY): Boolean {
+    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
         val dx = abs(to.x - from.x)
         val dy = abs(to.y - from.y)
 
         // Check for L-shaped move (2 squares in one direction and 1 square in perpendicular direction)
         if (!((dx == 2 && dy == 1) || (dx == 1 && dy == 2))) {
-            return false // Move is not in an L-shape
+            return false
         }
 
-        val destinationPiece = gameState.board[to.y][to.x]
+        val destinationPiece = board[to.y][to.x]
         // Can't move to a square with own piece
         if (destinationPiece != EM && destinationPiece.color == this.color) return false
 
         return true
     }
 
+    override fun clone() = Knight(color)
     override fun signature(): String = if (color == Color.W) "WN" else "BN"
 }
 
 object EM : Piece {
+    override val color: Color get() = throw UnsupportedOperationException("EM does not have a color")
+    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move = moveRequest.copy(valid = false)
     override fun clone() = EM
-
-    override val color: Color
-        get() = throw UnsupportedOperationException("EM does not have a color")
-
-    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
-        return moveRequest.copy(valid = false)
-    }
-
     override fun signature(): String = "EM"
+    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean = false
 }
 
 class GameState {
@@ -459,10 +393,38 @@ class GameState {
         Color.B -> positionBK
     }
 
-    fun makeMove(from: XY, to: XY): Piece {
+    /** Returns the captured piece or EM */
+    private fun makeMove(from: XY, to: XY): Piece {
         return this.board[to].clone().also {
             this.board[to] = this.board[from].clone()
             this.board[from] = EM
+        }
+    }
+
+    fun tryMakeMove(piece: Piece, from: XY, to: XY, moveRequest: Move): Move {
+        return when (piece.isValidMove(board, from, to)) {
+            true -> {
+                makeMove(from, to).let { capturedPiece ->
+                    getTheKing(piece.color)
+                        .isTheKingSafeAfterPieceMoved(this)
+                        .let { isKingSafe ->
+                            if (!isKingSafe) revertMove(capturedPiece, from, to, null)
+                            moveRequest.copy(valid = isKingSafe)
+                        }
+                }
+            }
+            false -> moveRequest.copy(valid = false)
+        }
+    }
+
+    fun revertMove(capturedPiece: Piece, from: XY, to: XY, enPassantCapturePosition: XY?) {
+        if (enPassantCapturePosition != null) {
+            board[from] = board[to].clone()
+            board[to] = EM
+            board[enPassantCapturePosition] = capturedPiece.clone()
+        } else {
+            board[from] = board[to].clone()
+            board[to] = capturedPiece.clone()
         }
     }
 
