@@ -15,7 +15,7 @@ data class InitMessage(
     @JsonProperty("gameId")
     val gameId: String
 )
-
+// todo Try removing JsonProperty annotation
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class Move(
@@ -36,5 +36,14 @@ data class Move(
     @JsonProperty("enPassantCapture")
     val enPassantCapture: String? = null,
     @JsonProperty("promotion")
-    val promotion: String? = null
+    val promotion: String? = null,
+    @JsonProperty("castling")
+    val castle: Castle? = null
+)
+
+data class Castle(
+//    val side: String,
+    val rook: String,
+    val rookPosStart: String,
+    val rookPosEnd: String,
 )

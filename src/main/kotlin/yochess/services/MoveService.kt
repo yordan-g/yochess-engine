@@ -2,11 +2,14 @@ package yochess.services
 
 import jakarta.enterprise.context.ApplicationScoped
 import org.jboss.logging.Logger
+import yochess.dtos.Castle
 import yochess.dtos.Move
 import yochess.services.XY.Companion.idxToFile
 import yochess.services.XY.Companion.idxToRank
 import kotlin.IllegalArgumentException
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 interface MoveService {
     fun makeMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move
@@ -29,18 +32,16 @@ class DefaultMoveService : MoveService {
 
 sealed interface Piece {
     val color: Color
-    fun clone(): Piece
     fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move
-    fun signature(): String
     fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean
+    fun clone(): Piece
+    fun signature(): String
 }
 
 class Pawn(override val color: Color) : Piece {
     private val direction: Int = if (color == Color.W) 1 else -1
     private val startingRank: Int = if (color == Color.W) 1 else 6
     private val promotionRank = if (color == Color.W) 7 else 0
-
-    override fun clone() = Pawn(color)
 
     override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         var moveResult = moveRequest.copy(valid = false)
@@ -85,7 +86,6 @@ class Pawn(override val color: Color) : Piece {
             (to.y == from.y + direction && (to.x == from.x + 1 || to.x == from.x - 1) && gameState.board[to] is EM &&
                 gameState.board[XY(to.x, from.y)] is Pawn && gameState.enPassantTarget == to)
             -> {
-                // todo this pos is different than other captures of a pawn, if need to be reverted won't work
                 if (gameState.board[XY(to.x, from.y)] is Pawn && gameState.enPassantTarget == to) {
                     enPassantCapturePosition = XY(to.x, from.y)
                     gameState.board[to] = this.clone()
@@ -112,7 +112,7 @@ class Pawn(override val color: Color) : Piece {
     private fun promotePawn(promotion: String?): Piece {
         return when (val piece = promotion?.lastOrNull()) {
             'q' -> Queen(color)
-            'r' -> Rook(color)
+            'r' -> Rook(color, "NONE")
             'n' -> Knight(color)
             'b' -> Bishop(color)
             null -> throw IllegalArgumentException("Error: Promotion piece not provided!")
@@ -120,8 +120,8 @@ class Pawn(override val color: Color) : Piece {
         }
     }
 
+    override fun clone() = Pawn(color)
     override fun signature(): String = if (color == Color.W) "WP" else "BP"
-
     override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
         return false
     }
@@ -171,19 +171,103 @@ class Queen(override val color: Color) : Piece {
 }
 
 class King(override val color: Color) : Piece {
-    override fun clone() = King(color)
+    private val notCastleAttempt = Triple(false, XY(-1, -1), XY(-1, -1))
 
     override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         gameState.enPassantTarget = null
 
-        gameState.board[to] = this.clone()
-        gameState.board[from] = EM
-        when (color) {
-            Color.W -> gameState.positionWK = to
-            Color.B -> gameState.positionBK = to
+        isCastleAttempt(from, to).let { castleAttempt ->
+            if (castleAttempt.first) {
+                return gameState
+                    .tryKingMove(this, from, to, moveRequest, castleAttempt).also {
+                        if (it.valid != null && it.valid) gameState.setKingMoved(color)
+                    }
+            }
         }
 
-        return moveRequest.copy(valid = true)
+        return when (isValidMove(gameState.board, from, to)) {
+            true ->
+                gameState.tryKingMove(this, from, to, moveRequest, notCastleAttempt).also {
+                    if (it.valid != null && it.valid) gameState.setKingMoved(color)
+                }
+
+            false -> moveRequest.copy(valid = false)
+        }
+    }
+
+    private fun isCastleAttempt(from: XY, to: XY): Triple<Boolean, XY, XY> {
+        val dx = abs(to.x - from.x)
+        val dy = abs(to.y - from.y)
+
+        // Validate if it's a horizontal move on the first or last rank (row)
+        if (dy == 0 && dx == 2 && (from.y == 0 || from.y == 7)) {
+            val (rookPosStart, rookPosEnd) = if (to.x > from.x) {
+                Pair(XY(7, from.y), XY(x = 4, from.y))
+            } else {
+                Pair(XY(0, from.y), XY(x = 2, from.y))
+            }
+
+            return Triple(true, rookPosStart, rookPosEnd)
+        }
+
+        return notCastleAttempt
+    }
+
+    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
+        // King can move only one square in any direction
+        // Horizontally, vertically, or diagonally
+        val dx = abs(to.x - from.x)
+        val dy = abs(to.y - from.y)
+
+        if ((dx > 1) || (dy > 1)) {
+            return false // Move is too far
+        }
+
+        // Check if the destination square is occupied by an ally
+        val destinationPiece = board[to]
+        if (destinationPiece != EM && destinationPiece.color == this.color) {
+            return false // Can't capture own piece
+        }
+
+        return true
+    }
+
+    fun canCastle(gameState: GameState, from: XY, to: XY): Boolean {
+        if (gameState.hasKingMoved(color)) return false
+
+        val y = from.y
+        val direction = if (to.x > from.x) 1 else -1
+        val rookX = if (direction == 1) 7 else 0 // Rook's position for castling
+
+        // Check if the path between the king and rook is clear
+        for (x in min(from.x, rookX) + 1 until max(from.x, rookX)) {
+            if (gameState.board[XY(x, y)] !is EM) return false
+        }
+
+        // Check if the king is currently in check, or passes through/ends up in check
+        if (isInCheck(gameState, gameState.getKingPosition(this.color))
+            || isPassingThroughCheck(gameState, from, direction)
+        ) return false
+
+        val rook = gameState.board[XY(rookX, y)]
+        return rook is Rook && !gameState.hasRookMoved(color, rook.side) // Check if the rook is present and hasn't moved
+    }
+
+    private fun isPassingThroughCheck(gameState: GameState, from: XY, direction: Int): Boolean {
+        val y = from.y
+
+        // Check the two squares the king moves through during castling
+        val checkPositions = if (direction == 1) {
+            listOf(XY(from.x + 1, y), XY(from.x + 2, y))
+        } else {
+            listOf(XY(from.x - 1, y), XY(from.x - 2, y))
+        }
+
+        for (newPos in checkPositions) {
+            if (isInCheck(gameState, newPos)) return true
+        }
+
+        return false
     }
 
     fun isTheKingSafeAfterPieceMoved(gameState: GameState): Boolean {
@@ -217,6 +301,78 @@ class King(override val color: Color) : Piece {
         return true
     }
 
+    fun isInCheck(gameState: GameState, kingPosition: XY): Boolean {
+        val directions = listOf(
+            XY(0, -1),   // North
+            XY(1, -1),   // North-East
+            XY(1, 0),    // East
+            XY(1, 1),    // South-East
+            XY(0, 1),    // South
+            XY(-1, 1),   // South-West
+            XY(-1, 0),   // West
+            XY(-1, -1)   // North-West
+        )
+
+        for (direction in directions) {
+            var distance = 1
+            while (true) {
+                val moveTo = XY(kingPosition.x + direction.x * distance, kingPosition.y + direction.y * distance)
+
+                if (!isValidSquare(moveTo)) break
+                val piece = gameState.board[moveTo]
+
+                if (isPinningPiece(piece, kingPosition, moveTo)) return true
+                if (piece !is EM) break // If there is any piece, a friend or foe, stop checking this direction
+
+                distance++
+            }
+        }
+
+        // Check for knights
+        val knightMoves = listOf(
+            XY(1, 2), XY(2, 1), XY(-1, 2), XY(-2, 1),
+            XY(1, -2), XY(2, -1), XY(-1, -2), XY(-2, -1)
+        )
+        for (kMove in knightMoves) {
+            val knightPos = XY(kingPosition.x + kMove.x, kingPosition.y + kMove.y)
+            if (isValidSquare(knightPos)) {
+                val piece = gameState.board[knightPos]
+                if (piece is Knight && piece.color != this.color) {
+                    return true
+                }
+            }
+        }
+
+        // Check for pawns
+        val pawnDirections = if (color == Color.W) listOf(XY(-1, 1), XY(1, 1)) else listOf(XY(-1, -1), XY(1, -1))
+        for (pDir in pawnDirections) {
+            val pawnPos = XY(kingPosition.x + pDir.x, kingPosition.y + pDir.y)
+            if (isValidSquare(pawnPos)) {
+                val piece = gameState.board[pawnPos]
+                if (piece is Pawn && piece.color != this.color) {
+                    return true
+                }
+            }
+        }
+
+        // Checking for the enemy king
+        for (dir in directions) {
+            val checkPos = kingPosition + dir
+            if (isValidSquare(checkPos)) {
+                val piece = gameState.board[checkPos]
+                if ((piece is King) && (piece.color != color)) {
+                    return true
+                }
+            }
+        }
+
+        // You would also need to check for check by the enemy king, which is similar to pawn check but in all 8 directions and only one square away.
+
+        return false
+    }
+
+    private operator fun XY.plus(other: XY): XY = XY(x + other.x, y + other.y)
+
     private fun isValidSquare(square: XY): Boolean = square.x in 0..7 && square.y in 0..7
 
     private fun isPinningPiece(piece: Piece, kingFrom: XY, kingTo: XY): Boolean {
@@ -247,19 +403,17 @@ class King(override val color: Color) : Piece {
     }
 
     private fun isAlliedPiece(piece: Piece): Boolean = piece !is EM && piece.color == this.color
-
+    override fun clone() = King(color)
     override fun signature(): String = if (color == Color.W) "WK" else "BK"
-
-    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
-        return false
-    }
 }
 
-class Rook(override val color: Color) : Piece {
+class Rook(override val color: Color, val side: String) : Piece {
 
     override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         gameState.enPassantTarget = null
-        return gameState.tryMakeMove(this, from, to, moveRequest)
+        return gameState.tryMakeMove(this, from, to, moveRequest).also {
+            if (it.valid != null && it.valid) gameState.setRookMoved(color, side)
+        }
     }
 
     override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
@@ -294,7 +448,7 @@ class Rook(override val color: Color) : Piece {
         return true
     }
 
-    override fun clone() = Rook(color)
+    override fun clone() = Rook(color, side)
     override fun signature(): String = if (color == Color.W) "WR" else "BR"
 }
 
@@ -357,7 +511,7 @@ class Knight(override val color: Color) : Piece {
             return false
         }
 
-        val destinationPiece = board[to.y][to.x]
+        val destinationPiece = board[to]
         // Can't move to a square with own piece
         if (destinationPiece != EM && destinationPiece.color == this.color) return false
 
@@ -378,9 +532,23 @@ object EM : Piece {
 
 class GameState {
     val board: Array<Array<Piece>> = initBoard()
-    var positionWK: XY = XY(3, 0)
-    var positionBK: XY = XY(3, 7)
+    private var positionWK: XY = XY(3, 0)
+    private var positionBK: XY = XY(3, 7)
+    private var wKingMoved: Boolean = false
+    private var bKingMoved: Boolean = false
+    private var wRookKsideMoved: Boolean = false
+    private var wRookQsideMoved: Boolean = false
+    private var bRookKsideMoved: Boolean = false
+    private var bRookQsideMoved: Boolean = false
+
     var enPassantTarget: XY? = null
+
+    private fun setKingPosition(color: Color, to: XY) {
+        when (color) {
+            Color.W -> positionWK = to
+            Color.B -> positionBK = to
+        }
+    }
 
     fun getTheKing(color: Color): King =
         when (val piece = board[getKingPosition(color)]) {
@@ -413,7 +581,39 @@ class GameState {
                         }
                 }
             }
+
             false -> moveRequest.copy(valid = false)
+        }
+    }
+
+    fun tryKingMove(king: King, from: XY, to: XY, moveRequest: Move, castleAttempt: Triple<Boolean, XY, XY>): Move {
+        if (castleAttempt.first) {
+            if (king.canCastle(this, from, to)) {
+                setKingPosition(king.color, to)
+                makeMove(from, to)
+                makeMove(castleAttempt.second, castleAttempt.third)
+                return moveRequest.copy(
+                    valid = true, castle = Castle(
+                        rook = Rook(king.color, "NONE").signature().lowercase(),
+                        rookPosStart = castleAttempt.second.toFileRank(),
+                        rookPosEnd = castleAttempt.third.toFileRank()
+                    )
+                )
+            } else {
+                return moveRequest.copy(valid = false)
+            }
+        }
+        // normal move
+        return makeMove(from, to).let { capturedPiece ->
+            setKingPosition(king.color, to)
+
+            king.isInCheck(this, getKingPosition(king.color)).let {
+                if (it) {
+                    revertMove(capturedPiece, from, to, null)
+                    setKingPosition(king.color, from)
+                }
+                moveRequest.copy(valid = !it)
+            }
         }
     }
 
@@ -428,15 +628,71 @@ class GameState {
         }
     }
 
+    fun setKingMoved(color: Color) {
+        when (color) {
+            Color.W -> wKingMoved = true
+            Color.B -> bKingMoved = true
+        }
+    }
+
+    fun hasKingMoved(color: Color): Boolean {
+        return when (color) {
+            Color.W -> wKingMoved
+            Color.B -> bKingMoved
+        }
+    }
+
+    fun setRookMoved(color: Color, side: String) {
+        when (color) {
+            Color.W -> {
+                if (side == "king") {
+                    wRookKsideMoved = true
+                } else {
+                    wRookQsideMoved = true
+                }
+            }
+
+            Color.B -> {
+                if (side == "king") {
+                    bRookKsideMoved = true
+                } else {
+                    bRookQsideMoved = true
+                }
+            }
+        }
+    }
+
+    fun hasRookMoved(color: Color, side: String): Boolean {
+        return when (color) {
+            Color.W -> {
+                if (side == "king") {
+                    wRookKsideMoved
+                } else {
+                    wRookQsideMoved
+                }
+            }
+
+            Color.B -> {
+                if (side == "king") {
+                    bRookKsideMoved
+                } else {
+                    bRookQsideMoved
+                }
+            }
+        }
+    }
+
     companion object {
+        val WRK = Rook(Color.W, side = "king")
+        val WRQ = Rook(Color.W, side = "queen")
+        val BRK = Rook(Color.B, side = "king")
+        val BRQ = Rook(Color.B, side = "queen")
         val WP = Pawn(Color.W)
-        val WR = Rook(Color.W)
         val WN = Knight(Color.W)
         val WB = Bishop(Color.W)
         val WQ = Queen(Color.W)
         val WK = King(Color.W)
         val BP = Pawn(Color.B)
-        val BR = Rook(Color.B)
         val BN = Knight(Color.B)
         val BB = Bishop(Color.B)
         val BQ = Queen(Color.B)
@@ -446,14 +702,14 @@ class GameState {
             arrayOf(
                 //     (a , b , c , d , e , f , g , h ),
                 //     (0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ),
-                arrayOf(WR, WN, WB, WK, WQ, WB, WN, WR), // 1 | 0
+                arrayOf(WRK, WN, WB, WK, WQ, WB, WN, WRQ), // 1 | 0
                 arrayOf(WP, WP, WP, WP, WP, WP, WP, WP), // 2 | 1
                 arrayOf(EM, EM, EM, EM, EM, EM, EM, EM), // 3 | 2
                 arrayOf(EM, EM, EM, EM, EM, EM, EM, EM), // 4 | 3
                 arrayOf(EM, EM, EM, EM, EM, EM, EM, EM), // 5 | 4
                 arrayOf(EM, EM, EM, EM, EM, EM, EM, EM), // 6 | 5
                 arrayOf(BP, BP, BP, BP, BP, BP, BP, BP), // 7 | 6
-                arrayOf(BR, BN, BB, BK, BQ, BB, BN, BR), // 8 | 7
+                arrayOf(BRK, BN, BB, BK, BQ, BB, BN, BRQ), // 8 | 7
                 //     (h , g , f , e , d , c , b , a ),
                 //     (0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ),
             )
