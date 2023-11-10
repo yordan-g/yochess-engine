@@ -215,13 +215,10 @@ class King(override val color: Color) : Piece {
 
     override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
         // King can move only one square in any direction
-        // Horizontally, vertically, or diagonally
         val dx = abs(to.x - from.x)
         val dy = abs(to.y - from.y)
 
-        if ((dx > 1) || (dy > 1)) {
-            return false // Move is too far
-        }
+        if ((dx > 1) || (dy > 1)) return false
 
         // Check if the destination square is occupied by an ally
         val destinationPiece = board[to]
@@ -235,13 +232,12 @@ class King(override val color: Color) : Piece {
     fun canCastle(gameState: GameState, from: XY, to: XY): Boolean {
         if (gameState.hasKingMoved(color)) return false
 
-        val y = from.y
         val direction = if (to.x > from.x) 1 else -1
         val rookX = if (direction == 1) 7 else 0 // Rook's position for castling
 
         // Check if the path between the king and rook is clear
         for (x in min(from.x, rookX) + 1 until max(from.x, rookX)) {
-            if (gameState.board[XY(x, y)] !is EM) return false
+            if (gameState.board[XY(x, from.y)] !is EM) return false
         }
 
         // Check if the king is currently in check, or passes through/ends up in check
@@ -249,18 +245,16 @@ class King(override val color: Color) : Piece {
             || isPassingThroughCheck(gameState, from, direction)
         ) return false
 
-        val rook = gameState.board[XY(rookX, y)]
+        val rook = gameState.board[XY(rookX, from.y)]
         return rook is Rook && !gameState.hasRookMoved(color, rook.side) // Check if the rook is present and hasn't moved
     }
 
     private fun isPassingThroughCheck(gameState: GameState, from: XY, direction: Int): Boolean {
-        val y = from.y
-
         // Check the two squares the king moves through during castling
         val checkPositions = if (direction == 1) {
-            listOf(XY(from.x + 1, y), XY(from.x + 2, y))
+            listOf(XY(from.x + 1, from.y), XY(from.x + 2, from.y))
         } else {
-            listOf(XY(from.x - 1, y), XY(from.x - 2, y))
+            listOf(XY(from.x - 1, from.y), XY(from.x - 2, from.y))
         }
 
         for (newPos in checkPositions) {
