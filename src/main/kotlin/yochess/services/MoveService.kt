@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped
 import org.jboss.logging.Logger
 import yochess.dtos.Castle
 import yochess.dtos.Move
+import yochess.services.GameState.Companion.DIRECTIONS
 import yochess.services.XY.Companion.idxToFile
 import yochess.services.XY.Companion.idxToRank
 import kotlin.IllegalArgumentException
@@ -266,18 +267,8 @@ class King(override val color: Color) : Piece {
 
     fun isTheKingSafeAfterPieceMoved(gameState: GameState): Boolean {
         val kingPosition = gameState.getKingPosition(color)
-        val directions = listOf(
-            XY(0, -1),   // North
-            XY(1, -1),   // North-East
-            XY(1, 0),    // East
-            XY(1, 1),    // South-East
-            XY(0, 1),    // South
-            XY(-1, 1),   // South-West
-            XY(-1, 0),   // West
-            XY(-1, -1)   // North-West
-        )
 
-        for (direction in directions) {
+        for (direction in DIRECTIONS) {
             var distance = 1
             while (true) {
                 val moveTo = XY(kingPosition.x + direction.x * distance, kingPosition.y + direction.y * distance)
@@ -296,18 +287,7 @@ class King(override val color: Color) : Piece {
     }
 
     fun isInCheck(gameState: GameState, kingPosition: XY): Boolean {
-        val directions = listOf(
-            XY(0, -1),   // North
-            XY(1, -1),   // North-East
-            XY(1, 0),    // East
-            XY(1, 1),    // South-East
-            XY(0, 1),    // South
-            XY(-1, 1),   // South-West
-            XY(-1, 0),   // West
-            XY(-1, -1)   // North-West
-        )
-
-        for (direction in directions) {
+        for (direction in DIRECTIONS) {
             var distance = 1
             while (true) {
                 val moveTo = XY(kingPosition.x + direction.x * distance, kingPosition.y + direction.y * distance)
@@ -350,7 +330,7 @@ class King(override val color: Color) : Piece {
         }
 
         // Checking for the enemy king
-        for (dir in directions) {
+        for (dir in DIRECTIONS) {
             val checkPos = kingPosition + dir
             if (isValidSquare(checkPos)) {
                 val piece = gameState.board[checkPos]
@@ -711,6 +691,17 @@ class GameState {
         private fun initBoard() = STARTING_BOARD.map { row ->
             row.map { it.clone() }.toTypedArray()
         }.toTypedArray()
+
+        val DIRECTIONS = listOf(
+            XY(0, -1),   // North
+            XY(1, -1),   // North-East
+            XY(1, 0),    // East
+            XY(1, 1),    // South-East
+            XY(0, 1),    // South
+            XY(-1, 1),   // South-West
+            XY(-1, 0),   // West
+            XY(-1, -1)   // North-West
+        )
     }
 }
 
