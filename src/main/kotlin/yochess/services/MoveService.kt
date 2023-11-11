@@ -21,10 +21,16 @@ class DefaultMoveService : MoveService {
     private val logger: Logger = Logger.getLogger(this::class.java)
 
     override fun makeMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
+        if (gameState.turn.toString() != moveRequest.piece.first().uppercase()) {
+            return moveRequest.copy(valid = false)
+        }
+
         return gameState
             .board[from]
             .move(gameState, from, to, moveRequest)
             .also {
+                if (it.valid == true) gameState.changeTurn()
+
                 gameState.board.print()
                 println("Valid: ${it.valid}")
             }
@@ -181,7 +187,7 @@ class King(override val color: Color) : Piece {
             if (castleAttempt.first) {
                 return gameState
                     .tryKingMove(this, from, to, moveRequest, castleAttempt).also {
-                        if (it.valid != null && it.valid) gameState.setKingMoved(color)
+                        if (it.valid == true) gameState.setKingMoved(color)
                     }
             }
         }
@@ -189,7 +195,7 @@ class King(override val color: Color) : Piece {
         return when (isValidMove(gameState.board, from, to)) {
             true ->
                 gameState.tryKingMove(this, from, to, moveRequest, notCastleAttempt).also {
-                    if (it.valid != null && it.valid) gameState.setKingMoved(color)
+                    if (it.valid == true) gameState.setKingMoved(color)
                 }
 
             false -> moveRequest.copy(valid = false)
@@ -386,7 +392,7 @@ class Rook(override val color: Color, val side: String) : Piece {
     override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         gameState.enPassantTarget = null
         return gameState.tryMakeMove(this, from, to, moveRequest).also {
-            if (it.valid != null && it.valid) gameState.setRookMoved(color, side)
+            if (it.valid == true) gameState.setRookMoved(color, side)
         }
     }
 
@@ -506,6 +512,8 @@ object EM : Piece {
 
 class GameState {
     val board: Array<Array<Piece>> = initBoard()
+    var turn: Color = Color.W
+
     private var positionWK: XY = XY(3, 0)
     private var positionBK: XY = XY(3, 7)
     private var wKingMoved: Boolean = false
@@ -516,6 +524,14 @@ class GameState {
     private var bRookQsideMoved: Boolean = false
 
     var enPassantTarget: XY? = null
+
+    fun changeTurn() {
+        if (turn == Color.W) {
+            turn = Color.B
+        } else {
+            turn = Color.W
+        }
+    }
 
     private fun setKingPosition(color: Color, to: XY) {
         when (color) {
