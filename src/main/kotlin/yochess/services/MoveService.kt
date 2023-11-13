@@ -29,7 +29,20 @@ class DefaultMoveService : MoveService {
             .board[from]
             .move(gameState, from, to, moveRequest)
             .also {
-                if (it.valid == true) gameState.changeTurn()
+                if (it.valid == true) {
+
+                    val opponentColor = gameState.getOpponentColor()
+                    val opponentKing = gameState.getTheKing(opponentColor)
+                    opponentKing.isInCheck(
+                        gameState,
+                        gameState.getKingPosition(opponentColor)
+                    ).let {
+                        if (it) gameState.setKingInCheck(opponentColor)
+                    }
+
+                    gameState.changeTurn()
+                }
+
 
                 gameState.board.print()
                 println("Valid: ${it.valid}")
@@ -346,8 +359,6 @@ class King(override val color: Color) : Piece {
             }
         }
 
-        // You would also need to check for check by the enemy king, which is similar to pawn check but in all 8 directions and only one square away.
-
         return false
     }
 
@@ -510,9 +521,13 @@ object EM : Piece {
     override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean = false
 }
 
+
 class GameState {
     val board: Array<Array<Piece>> = initBoard()
     var turn: Color = Color.W
+
+    var bInCheck = false
+    var wInCheck = false
 
     private var positionWK: XY = XY(3, 0)
     private var positionBK: XY = XY(3, 7)
@@ -524,6 +539,24 @@ class GameState {
     private var bRookQsideMoved: Boolean = false
 
     var enPassantTarget: XY? = null
+
+    fun getOpponentColor(): Color {
+        return if (turn == Color.W) Color.B else Color.W
+    }
+
+    fun setKingInCheck(color: Color) {
+        when (color) {
+            Color.W -> wInCheck = true
+            Color.B -> bInCheck = true
+        }
+    }
+
+    fun isKingInCheck(color: Color): Boolean {
+        return when (color) {
+            Color.W -> wInCheck
+            Color.B -> bInCheck
+        }
+    }
 
     fun changeTurn() {
         if (turn == Color.W) {
@@ -673,6 +706,7 @@ class GameState {
     }
 
     companion object {
+        // todo add identifiers for each piece so they can be tracked in a map of remaining pieces
         val WRK = Rook(Color.W, side = "king")
         val WRQ = Rook(Color.W, side = "queen")
         val BRK = Rook(Color.B, side = "king")
