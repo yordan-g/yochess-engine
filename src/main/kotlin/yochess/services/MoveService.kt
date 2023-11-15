@@ -76,14 +76,14 @@ class Pawn(override val color: Color) : Piece {
                 if (to.y == promotionRank) {
                     gameState.board[to] = promotePawn(moveRequest.promotion)
                 } else {
-                    gameState.board[to] = this.clone()
+                    gameState.board[to] = this
                 }
                 moveResult = moveRequest.copy(valid = true)
             }
             // 2. Initial Two-step forward
             (from.y == startingRank && to.y == from.y + (2 * direction) && to.x == from.x && gameState.board[to] is EM)
             -> {
-                gameState.board[to] = this.clone()
+                gameState.board[to] = this
                 gameState.board[from] = EM
                 gameState.enPassantTarget = XY(from.x, from.y + direction)
                 moveResult = moveRequest.copy(valid = true)
@@ -94,11 +94,11 @@ class Pawn(override val color: Color) : Piece {
             -> {
                 gameState.board[from] = EM
                 if (to.y == promotionRank) {
-                    capturedPiece = gameState.board[to].clone()
+                    capturedPiece = gameState.board[to]
                     gameState.board[to] = promotePawn(moveRequest.promotion)
                 } else {
-                    capturedPiece = gameState.board[to].clone()
-                    gameState.board[to] = this.clone()
+                    capturedPiece = gameState.board[to]
+                    gameState.board[to] = this
                 }
                 moveResult = moveRequest.copy(valid = true)
             }
@@ -108,7 +108,7 @@ class Pawn(override val color: Color) : Piece {
             -> {
                 if (gameState.board[XY(to.x, from.y)] is Pawn && gameState.enPassantTarget == to) {
                     enPassantCapturePosition = XY(to.x, from.y)
-                    gameState.board[to] = this.clone()
+                    gameState.board[to] = this
                     gameState.board[from] = EM
                     capturedPiece = gameState.board[enPassantCapturePosition]
                     gameState.board[enPassantCapturePosition] = EM
@@ -586,10 +586,10 @@ class GameState {
 
     /** Returns the captured piece or EM */
     private fun makeMove(from: XY, to: XY): Piece {
-        return this.board[to].clone().also {
-            this.board[to] = this.board[from].clone()
-            this.board[from] = EM
-        }
+        val capturedPiece = this.board[to]
+        this.board[to] = this.board[from]
+        this.board[from] = EM
+        return capturedPiece
     }
 
     fun tryMakeMove(piece: Piece, from: XY, to: XY, moveRequest: Move): Move {
@@ -642,12 +642,12 @@ class GameState {
 
     fun revertMove(capturedPiece: Piece, from: XY, to: XY, enPassantCapturePosition: XY?) {
         if (enPassantCapturePosition != null) {
-            board[from] = board[to].clone()
+            board[from] = board[to]
             board[to] = EM
-            board[enPassantCapturePosition] = capturedPiece.clone()
+            board[enPassantCapturePosition] = capturedPiece
         } else {
-            board[from] = board[to].clone()
-            board[to] = capturedPiece.clone()
+            board[from] = board[to]
+            board[to] = capturedPiece
         }
     }
 
