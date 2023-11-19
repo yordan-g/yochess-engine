@@ -3,20 +3,19 @@ package yochess.dtos
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import jakarta.websocket.Decoder
 import jakarta.websocket.Encoder
 import jakarta.websocket.EndpointConfig
 import java.io.Reader
 import java.io.Writer
 
+val objectMapper: ObjectMapper = ObjectMapper()
+    .registerKotlinModule()
+    .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
+    .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
+
 class MessageEnDecoder : Encoder.TextStream<Move>, Decoder.TextStream<Move> {
-
-    private val objectMapper = ObjectMapper()
-        .registerModule(JavaTimeModule())
-        .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
-        .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
-
     override fun init(config: EndpointConfig) {}
 
     override fun destroy() {}
@@ -31,12 +30,6 @@ class MessageEnDecoder : Encoder.TextStream<Move>, Decoder.TextStream<Move> {
 }
 
 class InitEnDecoder : Encoder.TextStream<InitMessage>, Decoder.TextStream<InitMessage> {
-
-    private val objectMapper = ObjectMapper()
-        .registerModule(JavaTimeModule())
-        .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
-        .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
-
     override fun init(config: EndpointConfig) {}
 
     override fun destroy() {}
