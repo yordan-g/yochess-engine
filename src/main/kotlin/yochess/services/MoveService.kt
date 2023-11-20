@@ -7,6 +7,7 @@ import yochess.dtos.Move
 import yochess.services.GameState.Companion.DIRECTIONS
 import yochess.services.XY.Companion.idxToFile
 import yochess.services.XY.Companion.idxToRank
+import java.util.*
 import kotlin.IllegalArgumentException
 import kotlin.math.abs
 import kotlin.math.max
@@ -28,42 +29,40 @@ class DefaultMoveService : MoveService {
         return gameState
             .board[from]
             .move(gameState, from, to, moveRequest)
-            .also {
-                if (it.valid == true) {
+            .let { (move, capturedPiece) ->
+                if (move.valid == true) {
 
                     val opponentColor = gameState.getOpponentColor()
                     val opponentKing = gameState.getTheKing(opponentColor)
-                    opponentKing.isInCheck(
-                        gameState,
-                        gameState.getKingPosition(opponentColor)
-                    ).let {
-                        if (it) gameState.setKingInCheck(opponentColor)
-                    }
 
+//                    opponentKing.isInCheckCheckmateStalemate(gameState, gameState.getKingPosition(opponentColor))
+
+                    gameState.logMove(gameState.turn, moveRequest, capturedPiece.id)
                     gameState.changeTurn()
                 }
 
-
                 gameState.board.print()
-                println("Valid: ${it.valid}")
+                println("Valid: ${move.valid}")
+                move
             }
     }
 }
 
 sealed interface Piece {
     val color: Color
-    fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move
+    val id: String
+    fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece>
     fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean
     fun clone(): Piece
     fun signature(): String
 }
 
-class Pawn(override val color: Color) : Piece {
+class Pawn(override val color: Color, override val id: String) : Piece {
     private val direction: Int = if (color == Color.W) 1 else -1
     private val startingRank: Int = if (color == Color.W) 1 else 6
     private val promotionRank = if (color == Color.W) 7 else 0
 
-    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
+    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece> {
         var moveResult = moveRequest.copy(valid = false)
         var capturedPiece: Piece = EM
         var enPassantCapturePosition: XY? = null
@@ -115,7 +114,7 @@ class Pawn(override val color: Color) : Piece {
                 }
             }
             // 5. Invalid move
-            else -> return moveResult
+            else -> return moveResult to EM
         }
 
         // 6. Is the king under a check after move
@@ -126,30 +125,30 @@ class Pawn(override val color: Color) : Piece {
                 moveResult = moveRequest.copy(valid = it, enPassantCapture = enPassantCapturePosition?.toFileRank() ?: null)
             }
 
-        return moveResult
+        return moveResult to capturedPiece
     }
 
     private fun promotePawn(promotion: String?): Piece {
         return when (val piece = promotion?.lastOrNull()) {
-            'q' -> Queen(color)
-            'r' -> Rook(color).apply { hasMoved = true }
-            'n' -> Knight(color)
-            'b' -> Bishop(color)
+            'q' -> Queen(color, id)
+            'r' -> Rook(color, id).apply { hasMoved = true }
+            'n' -> Knight(color, id)
+            'b' -> Bishop(color, id)
             null -> throw IllegalArgumentException("Error: Promotion piece not provided!")
             else -> throw IllegalArgumentException("Error: Piece: $piece is not a valid chess notation!")
         }
     }
 
-    override fun clone() = Pawn(color)
+    override fun clone() = Pawn(color, id)
     override fun signature(): String = if (color == Color.W) "WP" else "BP"
     override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
         return false
     }
 }
 
-class Queen(override val color: Color) : Piece {
+class Queen(override val color: Color, override val id: String) : Piece {
 
-    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
+    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece> {
         gameState.enPassantTarget = null
         return gameState.tryMakeMove(this, from, to, moveRequest)
     }
@@ -186,33 +185,56 @@ class Queen(override val color: Color) : Piece {
         return true
     }
 
-    override fun clone() = Queen(color)
+    override fun clone() = Queen(color, id)
     override fun signature(): String = if (color == Color.W) "WQ" else "BQ"
 }
 
-class King(override val color: Color) : Piece {
+class King(override val color: Color, override val id: String) : Piece {
     private val notCastleAttempt = Triple(false, XY(-1, -1), XY(-1, -1))
     private var hasMoved = false
 
-    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
+    fun isInCheckCheckmateStalemate(gameState: GameState, kingPosition: XY): Triple<Boolean, Boolean, Boolean> {
+        val inCheck = isInCheck(gameState, kingPosition)
+        var inCheckmate = false
+        var inStalemate = false
+
+        if (inCheck) {
+            inCheckmate = !hasLegalMoves(gameState, kingPosition, inCheck)
+        } else {
+            inStalemate = !hasLegalMoves(gameState, kingPosition, inCheck)
+        }
+
+        return Triple(inCheck, inCheckmate, inStalemate)
+    }
+
+    private fun hasLegalMoves(gameState: GameState, kingPosition: XY, inCheck: Boolean): Boolean {
+        // Check all possible moves for the king and other pieces to escape check or to make a legal move
+        // This method needs to consider both the case of check and no check (stalemate scenario)
+        // ...
+
+        // If no legal move exists that can get the king out of check or make any legal move, return false
+        return false
+    }
+
+    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece> {
         gameState.enPassantTarget = null
 
         isCastleAttempt(from, to).let { castleAttempt ->
             if (castleAttempt.first) {
                 return gameState
-                    .tryKingMove(this, from, to, moveRequest, castleAttempt).also {
-                        if (it.valid == true) hasMoved = true
+                    .tryKingMove(this, from, to, moveRequest, castleAttempt).also { (move, capturedPiece) ->
+                        if (move.valid == true) hasMoved = true
                     }
             }
         }
 
         return when (isValidMove(gameState.board, from, to)) {
             true ->
-                gameState.tryKingMove(this, from, to, moveRequest, notCastleAttempt).also {
-                    if (it.valid == true) hasMoved = true
+                gameState.tryKingMove(this, from, to, moveRequest, notCastleAttempt).also { (move, _) ->
+                    if (move.valid == true) hasMoved = true
                 }
 
-            false -> moveRequest.copy(valid = false)
+            false -> moveRequest.copy(valid = false) to EM
         }
     }
 
@@ -395,17 +417,17 @@ class King(override val color: Color) : Piece {
     }
 
     private fun isAlliedPiece(piece: Piece): Boolean = piece !is EM && piece.color == this.color
-    override fun clone() = King(color)
+    override fun clone() = King(color, id)
     override fun signature(): String = if (color == Color.W) "WK" else "BK"
 }
 
-class Rook(override val color: Color) : Piece {
+class Rook(override val color: Color, override val id: String) : Piece {
     var hasMoved = false
 
-    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
+    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece> {
         gameState.enPassantTarget = null
-        return gameState.tryMakeMove(this, from, to, moveRequest).also {
-            if (it.valid == true) hasMoved = true
+        return gameState.tryMakeMove(this, from, to, moveRequest).also { (move, _) ->
+            if (move.valid == true) hasMoved = true
         }
     }
 
@@ -441,13 +463,13 @@ class Rook(override val color: Color) : Piece {
         return true
     }
 
-    override fun clone() = Rook(color)
+    override fun clone() = Rook(color, id)
     override fun signature(): String = if (color == Color.W) "WR" else "BR"
 }
 
-class Bishop(override val color: Color) : Piece {
+class Bishop(override val color: Color, override val id: String) : Piece {
 
-    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
+    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece> {
         gameState.enPassantTarget = null
         return gameState.tryMakeMove(this, from, to, moveRequest)
     }
@@ -484,13 +506,13 @@ class Bishop(override val color: Color) : Piece {
         return true
     }
 
-    override fun clone() = Bishop(color)
+    override fun clone() = Bishop(color, id)
     override fun signature(): String = if (color == Color.W) "WB" else "BB"
 }
 
-class Knight(override val color: Color) : Piece {
+class Knight(override val color: Color, override val id: String) : Piece {
 
-    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
+    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece> {
         gameState.enPassantTarget = null
         return gameState.tryMakeMove(this, from, to, moveRequest)
     }
@@ -511,45 +533,74 @@ class Knight(override val color: Color) : Piece {
         return true
     }
 
-    override fun clone() = Knight(color)
+    override fun clone() = Knight(color, id)
     override fun signature(): String = if (color == Color.W) "WN" else "BN"
 }
 
 object EM : Piece {
     override val color: Color get() = throw UnsupportedOperationException("EM does not have a color")
-    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move = moveRequest.copy(valid = false)
+    override val id: String = "em"
+
+    override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece> = moveRequest.copy(valid = false) to EM
     override fun clone() = EM
     override fun signature(): String = "EM"
     override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean = false
 }
 
+// piece:from:to:captured
+// "wp:e2:e4:bq"
+data class MoveLog(
+    var w: String,
+    var b: String? = null
+)
+
 class GameState {
     val board: Array<Array<Piece>> = initBoard()
     var turn: Color = Color.W
-
-    var bInCheck = false
-    var wInCheck = false
+    var enPassantTarget: XY? = null
 
     private var positionWK: XY = XY(3, 0)
     private var positionBK: XY = XY(3, 7)
 
-    var enPassantTarget: XY? = null
+    val whitePieces: MutableMap<String, XY> = mutableMapOf()
+    val blackPieces: MutableMap<String, XY> = mutableMapOf()
+
+    var bInCheck = false
+    var wInCheck = false
+
+    private val history = LinkedList<MoveLog>()
+
+    // "wp:e2:e4:bq"
+    fun logMove(color: Color, moveRequest: Move, capture: String) = when (color) {
+        Color.B -> "${moveRequest.piece}:${moveRequest.squareFrom}:${moveRequest.squareTo}:$capture"
+            .also { history.last.b = it }
+
+        Color.W -> "${moveRequest.piece}:${moveRequest.squareFrom}:${moveRequest.squareTo}:$capture"
+            .also { history.add(MoveLog(it)) }
+    }
 
     fun getOpponentColor(): Color = if (turn == Color.W) Color.B else Color.W
 
-    fun setKingInCheck(color: Color) = when (color) {
-        Color.W -> wInCheck = true
-        Color.B -> bInCheck = true
-    }
+//    fun setKingInCheck(color: Color) = when (color) {
+//        Color.W -> wInCheck = true
+//        Color.B -> bInCheck = true
+//    }
+//
+//    fun isKingInCheck(color: Color) = when (color) {
+//        Color.W -> wInCheck
+//        Color.B -> bInCheck
+//    }
 
-    fun isKingInCheck(color: Color) = when (color) {
-        Color.W -> wInCheck
-        Color.B -> bInCheck
-    }
+    fun changeTurn(): Color = when (turn) {
+        Color.W -> {
+            turn = Color.B
+            turn
+        }
 
-    fun changeTurn() = when (turn) {
-        Color.W -> turn = Color.B
-        Color.B -> turn = Color.W
+        Color.B -> {
+            turn = Color.W
+            turn
+        }
     }
 
     private fun setKingPosition(color: Color, to: XY) = when (color) {
@@ -575,7 +626,7 @@ class GameState {
         return capturedPiece
     }
 
-    fun tryMakeMove(piece: Piece, from: XY, to: XY, moveRequest: Move): Move {
+    fun tryMakeMove(piece: Piece, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece> {
         return when (piece.isValidMove(board, from, to)) {
             true -> {
                 makeMove(from, to).let { capturedPiece ->
@@ -583,42 +634,44 @@ class GameState {
                         .isTheKingSafeAfterPieceMoved(this)
                         .let { isKingSafe ->
                             if (!isKingSafe) revertMove(capturedPiece, from, to, null)
-                            moveRequest.copy(valid = isKingSafe)
+                            moveRequest.copy(valid = isKingSafe) to capturedPiece
                         }
                 }
             }
 
-            false -> moveRequest.copy(valid = false)
+            false -> moveRequest.copy(valid = false) to EM
         }
     }
 
-    fun tryKingMove(king: King, from: XY, to: XY, moveRequest: Move, castleAttempt: Triple<Boolean, XY, XY>): Move {
+    fun tryKingMove(king: King, from: XY, to: XY, moveRequest: Move, castleAttempt: Triple<Boolean, XY, XY>): Pair<Move, Piece> {
         if (castleAttempt.first) {
-            if (king.canCastle(this, from, to)) {
+            return if (king.canCastle(this, from, to)) {
                 setKingPosition(king.color, to)
-                makeMove(from, to)
+                val capturedPiece = makeMove(from, to)
                 makeMove(castleAttempt.second, castleAttempt.third)
-                return moveRequest.copy(
+                moveRequest.copy(
                     valid = true, castle = Castle(
-                        rook = Rook(king.color).signature().lowercase(),
+                        rook = Rook(king.color, id = "${king.color.toString().lowercase()}r").signature().lowercase(),
                         rookPosStart = castleAttempt.second.toFileRank(),
                         rookPosEnd = castleAttempt.third.toFileRank()
                     )
-                )
+                ) to capturedPiece
             } else {
-                return moveRequest.copy(valid = false)
+                moveRequest.copy(valid = false) to EM
             }
         }
         // normal move
         return makeMove(from, to).let { capturedPiece ->
             setKingPosition(king.color, to)
 
-            king.isInCheck(this, getKingPosition(king.color)).let {
-                if (it) {
+            king.isInCheck(this, getKingPosition(king.color)).let { isInCheck ->
+                if (isInCheck) {
                     revertMove(capturedPiece, from, to, null)
                     setKingPosition(king.color, from)
+                    moveRequest.copy(valid = false) to EM
+                } else {
+                    moveRequest.copy(valid = true) to capturedPiece
                 }
-                moveRequest.copy(valid = !it)
             }
         }
     }
@@ -636,18 +689,18 @@ class GameState {
 
     companion object {
         // todo add identifiers for each piece so they can be tracked in a map of remaining pieces
-        val WP = Pawn(Color.W)
-        val WR = Rook(Color.W)
-        val WN = Knight(Color.W)
-        val WB = Bishop(Color.W)
-        val WQ = Queen(Color.W)
-        val WK = King(Color.W)
-        val BP = Pawn(Color.B)
-        val BR = Rook(Color.B)
-        val BN = Knight(Color.B)
-        val BB = Bishop(Color.B)
-        val BQ = Queen(Color.B)
-        val BK = King(Color.B)
+        val WP = Pawn(Color.W, id = "wp")
+        val WR = Rook(Color.W, id = "wr")
+        val WN = Knight(Color.W, id = "wn")
+        val WB = Bishop(Color.W, id = "wb")
+        val WQ = Queen(Color.W, id = "wq")
+        val WK = King(Color.W, id = "wk")
+        val BP = Pawn(Color.B, id = "bp")
+        val BR = Rook(Color.B, id = "br")
+        val BN = Knight(Color.B, id = "bn")
+        val BB = Bishop(Color.B, id = "bb")
+        val BQ = Queen(Color.B, id = "bq")
+        val BK = King(Color.B, id = "bk")
 
         val STARTING_BOARD: Array<Array<Piece>> =
             arrayOf(
@@ -729,7 +782,6 @@ data class XY(val x: Int, val y: Int) {
 fun XY.toFileRank(): String = (idxToFile[x] + idxToRank[y]).also {
     if (it.length > 2) throw IllegalArgumentException("Can't convert to File:Rank from the given indexes: $x:$y")
 }
-
 
 fun String.toXY(): XY {
     // todo Check if the destination square is within the board's boundaries
