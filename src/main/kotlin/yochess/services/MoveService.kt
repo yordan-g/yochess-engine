@@ -31,13 +31,15 @@ class DefaultMoveService : MoveService {
             .move(gameState, from, to, moveRequest)
             .let { (move, capturedPiece) ->
                 if (move.valid == true) {
+                    gameState.logMove(moveRequest, capturedPiece.id)
+                    gameState.track(capturedPiece, gameState.board[to] to to)
+
 
                     val opponentColor = gameState.getOpponentColor()
                     val opponentKing = gameState.getTheKing(opponentColor)
 
 //                    opponentKing.isInCheckCheckmateStalemate(gameState, gameState.getKingPosition(opponentColor))
 
-                    gameState.logMove(gameState.turn, moveRequest, capturedPiece.id)
                     gameState.changeTurn()
                 }
 
@@ -130,6 +132,7 @@ class Pawn(override val color: Color, override val id: String) : Piece {
 
     private fun promotePawn(promotion: String?): Piece {
         return when (val piece = promotion?.lastOrNull()) {
+            // todo - increment unique ids here because it will break tracking of active pieces
             'q' -> Queen(color, id)
             'r' -> Rook(color, id).apply { hasMoved = true }
             'n' -> Knight(color, id)
@@ -562,16 +565,51 @@ class GameState {
     private var positionWK: XY = XY(3, 0)
     private var positionBK: XY = XY(3, 7)
 
-    val whitePieces: MutableMap<String, XY> = mutableMapOf()
-    val blackPieces: MutableMap<String, XY> = mutableMapOf()
+    private val wPieces: MutableMap<String, XY> = mutableMapOf(
+        WR1.id to XY(0, 0), WN1.id to XY(1, 0), WB1.id to XY(2, 0), WK1.id to XY(3, 0),
+        WQ1.id to XY(4, 0), WB2.id to XY(5, 0), WN2.id to XY(6, 0), WR2.id to XY(7, 0),
+        WP1.id to XY(0, 1), WP2.id to XY(1, 1), WP3.id to XY(2, 1), WP4.id to XY(3, 1),
+        WP5.id to XY(4, 1), WP6.id to XY(5, 1), WP7.id to XY(6, 1), WP8.id to XY(7, 1)
+    )
+    private val bPieces: MutableMap<String, XY> = mutableMapOf(
+        BR1.id to XY(0, 7), BN1.id to XY(1, 7), BB1.id to XY(2, 7), BK1.id to XY(3, 7),
+        BQ1.id to XY(4, 7), BB2.id to XY(5, 7), BN2.id to XY(6, 7), BR2.id to XY(7, 7),
+        BP1.id to XY(0, 6), BP2.id to XY(1, 6), BP3.id to XY(2, 6), BP4.id to XY(3, 6),
+        BP5.id to XY(4, 6), BP6.id to XY(5, 6), BP7.id to XY(6, 6), BP8.id to XY(7, 6)
+    )
+    private val wCaptures = LinkedList<String>()
+    private val bCaptures = LinkedList<String>()
 
     var bInCheck = false
     var wInCheck = false
 
     private val history = LinkedList<MoveLog>()
 
+    fun track(capturedPiece: Piece, movedPiecePair: Pair<Piece, XY>) {
+        movedPiecePair.first.let { movedPiece ->
+            when (movedPiece.color) {
+                Color.W -> {
+                    // todo: could handle the error even thought it's guarded already
+                    wPieces.replace(movedPiece.id, movedPiecePair.second)
+                    if (capturedPiece != EM) {
+                        wCaptures.add(capturedPiece.id)
+                        bPieces.remove(capturedPiece.id)
+                    }
+                }
+
+                Color.B -> {
+                    bPieces.replace(movedPiece.id, movedPiecePair.second)
+                    if (capturedPiece != EM) {
+                        bCaptures.add(capturedPiece.id)
+                        wPieces.remove(capturedPiece.id)
+                    }
+                }
+            }
+        }
+    }
+
     // "wp:e2:e4:bq"
-    fun logMove(color: Color, moveRequest: Move, capture: String) = when (color) {
+    fun logMove(moveRequest: Move, capture: String) = when (turn) {
         Color.B -> "${moveRequest.piece}:${moveRequest.squareFrom}:${moveRequest.squareTo}:$capture"
             .also { history.last.b = it }
 
@@ -663,7 +701,6 @@ class GameState {
         // normal move
         return makeMove(from, to).let { capturedPiece ->
             setKingPosition(king.color, to)
-
             king.isInCheck(this, getKingPosition(king.color)).let { isInCheck ->
                 if (isInCheck) {
                     revertMove(capturedPiece, from, to, null)
@@ -688,34 +725,55 @@ class GameState {
     }
 
     companion object {
-        // todo add identifiers for each piece so they can be tracked in a map of remaining pieces
-        val WP = Pawn(Color.W, id = "wp")
-        val WR = Rook(Color.W, id = "wr")
-        val WN = Knight(Color.W, id = "wn")
-        val WB = Bishop(Color.W, id = "wb")
-        val WQ = Queen(Color.W, id = "wq")
-        val WK = King(Color.W, id = "wk")
-        val BP = Pawn(Color.B, id = "bp")
-        val BR = Rook(Color.B, id = "br")
-        val BN = Knight(Color.B, id = "bn")
-        val BB = Bishop(Color.B, id = "bb")
-        val BQ = Queen(Color.B, id = "bq")
-        val BK = King(Color.B, id = "bk")
+        val WP1 = Pawn(Color.W, id = "wp1")
+        val WP2 = Pawn(Color.W, id = "wp2")
+        val WP3 = Pawn(Color.W, id = "wp3")
+        val WP4 = Pawn(Color.W, id = "wp4")
+        val WP5 = Pawn(Color.W, id = "wp5")
+        val WP6 = Pawn(Color.W, id = "wp6")
+        val WP7 = Pawn(Color.W, id = "wp7")
+        val WP8 = Pawn(Color.W, id = "wp8")
+        val WR1 = Rook(Color.W, id = "wr1")
+        val WR2 = Rook(Color.W, id = "wr2")
+        val WN1 = Knight(Color.W, id = "wn1")
+        val WN2 = Knight(Color.W, id = "wn2")
+        val WB1 = Bishop(Color.W, id = "wb1")
+        val WB2 = Bishop(Color.W, id = "wb2")
+        val WQ1 = Queen(Color.W, id = "wq1")
+        val WK1 = King(Color.W, id = "wk1")
+
+        val BP1 = Pawn(Color.B, id = "bp1")
+        val BP2 = Pawn(Color.B, id = "bp2")
+        val BP3 = Pawn(Color.B, id = "bp3")
+        val BP4 = Pawn(Color.B, id = "bp4")
+        val BP5 = Pawn(Color.B, id = "bp5")
+        val BP6 = Pawn(Color.B, id = "bp6")
+        val BP7 = Pawn(Color.B, id = "bp7")
+        val BP8 = Pawn(Color.B, id = "bp8")
+        val BR1 = Rook(Color.B, id = "br1")
+        val BR2 = Rook(Color.B, id = "br2")
+        val BN1 = Knight(Color.B, id = "bn1")
+        val BN2 = Knight(Color.B, id = "bn2")
+        val BB1 = Bishop(Color.B, id = "bb1")
+        val BB2 = Bishop(Color.B, id = "bb2")
+        val BQ1 = Queen(Color.B, id = "bq1")
+        val BK1 = King(Color.B, id = "bk1")
+        val EM0 = EM
 
         val STARTING_BOARD: Array<Array<Piece>> =
             arrayOf(
-                //     (a , b , c , d , e , f , g , h ),
-                //     (0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ),
-                arrayOf(WR, WN, WB, WK, WQ, WB, WN, WR), // 1 | 0
-                arrayOf(WP, WP, WP, WP, WP, WP, WP, WP), // 2 | 1
-                arrayOf(EM, EM, EM, EM, EM, EM, EM, EM), // 3 | 2
-                arrayOf(EM, EM, EM, EM, EM, EM, EM, EM), // 4 | 3
-                arrayOf(EM, EM, EM, EM, EM, EM, EM, EM), // 5 | 4
-                arrayOf(EM, EM, EM, EM, EM, EM, EM, EM), // 6 | 5
-                arrayOf(BP, BP, BP, BP, BP, BP, BP, BP), // 7 | 6
-                arrayOf(BR, BN, BB, BK, BQ, BB, BN, BR), // 8 | 7
-                //     (h , g , f , e , d , c , b , a ),
-                //     (0 , 1 , 2 , 3 , 4 , 5 , 6 , 7 ),
+                //     (a  , b  , c  , d  , e  , f  , g  , h  ),
+                //     (0  , 1  , 2  , 3  , 4  , 5  , 6  , 7  ),
+                arrayOf(WR1, WN1, WB1, WK1, WQ1, WB2, WN2, WR2), // 1 | 0
+                arrayOf(WP1, WP2, WP3, WP4, WP5, WP6, WP7, WP8), // 2 | 1
+                arrayOf(EM0, EM0, EM0, EM0, EM0, EM0, EM0, EM0), // 3 | 2
+                arrayOf(EM0, EM0, EM0, EM0, EM0, EM0, EM0, EM0), // 4 | 3
+                arrayOf(EM0, EM0, EM0, EM0, EM0, EM0, EM0, EM0), // 5 | 4
+                arrayOf(EM0, EM0, EM0, EM0, EM0, EM0, EM0, EM0), // 6 | 5
+                arrayOf(BP1, BP2, BP3, BP4, BP5, BP6, BP7, BP8), // 7 | 6
+                arrayOf(BR1, BN1, BB1, BK1, BQ1, BB2, BN2, BR2), // 8 | 7
+                //     (h  , g  , f  , e  , d  , c  , b  , a  ),
+                //     (0  , 1  , 2  , 3  , 4  , 5  , 6  , 7  ),
             )
 
         private fun initBoard() = STARTING_BOARD.map { row ->
