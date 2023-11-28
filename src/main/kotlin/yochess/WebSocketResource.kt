@@ -59,7 +59,7 @@ class WebSocketResource(
         moveRequest: Move,
         @PathParam("username") username: String
     ) {
-        val moveResult = moveService.makeMove(
+        val moveResult = moveService.processMove(
             gameState = gamesService.getGame(moveRequest.gameId).state,
             from = moveRequest.squareFrom.toXY(),
             to = moveRequest.squareTo.toXY(),

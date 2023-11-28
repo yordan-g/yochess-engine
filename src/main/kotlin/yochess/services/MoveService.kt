@@ -5,6 +5,7 @@ import org.jboss.logging.Logger
 import yochess.dtos.Castle
 import yochess.dtos.Move
 import yochess.services.GameState.Companion.DIRECTIONS
+import yochess.services.GameState.Companion.EMPTY_MOVE_REQUEST
 import yochess.services.XY.Companion.idxToFile
 import yochess.services.XY.Companion.idxToRank
 import java.util.*
@@ -14,14 +15,14 @@ import kotlin.math.max
 import kotlin.math.min
 
 interface MoveService {
-    fun makeMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move
+    fun processMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move
 }
 
 @ApplicationScoped
 class DefaultMoveService : MoveService {
     private val logger: Logger = Logger.getLogger(this::class.java)
 
-    override fun makeMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
+    override fun processMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         if (gameState.turn.toString() != moveRequest.piece.first().uppercase()) {
             return moveRequest.copy(valid = false)
         }
@@ -38,7 +39,8 @@ class DefaultMoveService : MoveService {
                     val opponentColor = gameState.getOpponentColor()
                     val opponentKing = gameState.getTheKing(opponentColor)
 
-//                    opponentKing.isInCheckCheckmateStalemate(gameState, gameState.getKingPosition(opponentColor))
+                    val res = opponentKing.isInCheckCheckmateStalemate(gameState, gameState.getKingPosition(opponentColor))
+                    println("---- CHECKMATE --- ${res.first} ${res.first} ${res.first} ${res.first}")
 
                     gameState.changeTurn()
                 }
@@ -196,26 +198,118 @@ class King(override val color: Color, override val id: String) : Piece {
     private val notCastleAttempt = Triple(false, XY(-1, -1), XY(-1, -1))
     private var hasMoved = false
 
-    fun isInCheckCheckmateStalemate(gameState: GameState, kingPosition: XY): Triple<Boolean, Boolean, Boolean> {
-        val inCheck = isInCheck(gameState, kingPosition)
-        var inCheckmate = false
-        var inStalemate = false
+    fun isInCheckCheckmateStalemate(gameState: GameState, kingPosition: XY): Pair<Boolean, Boolean> {
+        val (threats, inCheck) = isInCheckEnhanced(gameState, kingPosition)
 
-        if (inCheck) {
-            inCheckmate = !hasLegalMoves(gameState, kingPosition, inCheck)
-        } else {
-            inStalemate = !hasLegalMoves(gameState, kingPosition, inCheck)
-        }
+        val inCheckmate = inCheck && isInCheckmate(gameState, kingPosition, threats)
+//        val inStalemate = !inCheck && isInStalemate(gameState, kingPosition)
 
-        return Triple(inCheck, inCheckmate, inStalemate)
+        return inCheckmate to false
+//        return Triple(inCheck, inCheckmate, inStalemate)
     }
 
-    private fun hasLegalMoves(gameState: GameState, kingPosition: XY, inCheck: Boolean): Boolean {
-        // Check all possible moves for the king and other pieces to escape check or to make a legal move
-        // This method needs to consider both the case of check and no check (stalemate scenario)
-        // ...
+    private fun canKingMoveToSafeSquare(gameState: GameState, current: XY): Boolean {
+        for (dir in DIRECTIONS) {
+            val newPos = current + dir
+            if (!isValidSquare(newPos)) continue
+            if (!isValidMove(gameState.board, current, newPos)) continue
 
-        // If no legal move exists that can get the king out of check or make any legal move, return false
+            gameState.setKingPosition(color, newPos) // todo: do I need also to capture the piece?
+            if (!isInCheck(gameState, newPos)) {
+                gameState.setKingPosition(color, current)
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun canCaptureCheckingPiece(gameState: GameState, threats: List<XY>): Boolean {
+        if (threats.size > 1) return false
+        val threatPos = threats.first()
+        val threat = gameState.board[threatPos]
+        val oppositePieces = gameState.getOppositePieces(threat.color)
+
+        for (entry in oppositePieces) {
+            if (entry.key[1] == 'k') continue
+            val from = entry.value
+            val piece = gameState.board[from]
+            piece.move(gameState, from, threatPos, EMPTY_MOVE_REQUEST).also { (move, capture) ->
+                if (move.valid == true) {
+                    gameState.board[from] = piece
+                    gameState.board[threatPos] = capture
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    private fun canBlockCheck(gameState: GameState, kingPosition: XY, threats: List<XY>): Boolean {
+        if (threats.size > 1) return false
+        if (gameState.board[threats.first()] is Knight) return false
+        val threatPos = threats.first()
+        val dx = threatPos.x - kingPosition.x
+        val dy = threatPos.y - kingPosition.y
+        val stepX = if (dx > 0) 1 else -1
+        val stepY = if (dy > 0) 1 else -1
+
+        var defendSquare = when {
+            dy == 0 -> XY(kingPosition.x + stepX, kingPosition.y) // horizontal
+            dx == 0 -> XY(kingPosition.x, kingPosition.y + stepY) // vertical
+            abs(dx) == abs(dy) -> XY(kingPosition.x + stepX, kingPosition.y + stepY) // diagonal
+            else -> throw IllegalArgumentException("King in check but there was an error determining the square to block!")
+        }
+
+        val oppositePieces = gameState.getOppositePieces(gameState.board[threats.first()].color)
+
+        for (entry in oppositePieces) {
+            if (entry.key[1] == 'k') continue
+            val from = entry.value
+            val piece = gameState.board[from]
+            piece.move(gameState, from, defendSquare, EMPTY_MOVE_REQUEST).also { (move, capture) ->
+                if (move.valid == true) {
+                    gameState.board[from] = piece
+                    gameState.board[defendSquare] = capture
+                    return true
+                }
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Check if the King Can Move:
+     *
+     * Iterate through all possible moves for the king (one square in any direction, including diagonals).
+     * For each move, check if the king would still be in check after making that move. This involves temporarily making the move, checking for check, and then undoing the move.
+     * If there's at least one move where the king is not in check, it's not checkmate.
+     *
+     * Check if the Checking Piece Can Be Captured:
+     *
+     *  Identify the piece(s) that is/are giving the check. There might be more than one in some cases (like a double check), in which case, capturing one won't resolve the check.
+     *  For each piece on your side, see if it can capture the checking piece without putting your king in check. This also involves simulating the capture and then checking for check.
+     *
+     * Check if an Ally Piece Can Block the Check:
+     *
+     * This step is only applicable if the check is given by a sliding piece (queen, rook, bishop). Knights, pawns, and kings give checks that cannot be blocked.
+     * Determine the squares that lie between the king and the checking piece. For each of your pieces, see if it can move to any of those squares without putting your king in check.
+     */
+    private fun isInCheckmate(gameState: GameState, kingPosition: XY, threats: List<XY>): Boolean {
+        return when {
+            canKingMoveToSafeSquare(gameState, kingPosition) -> false
+            canCaptureCheckingPiece(gameState, threats) -> false
+            canBlockCheck(gameState, kingPosition, threats) -> false
+            else -> true // No legal moves, so it's checkmate
+        }
+    }
+
+    private fun isInStalemate(gameState: GameState, kingPosition: XY): Boolean {
+        // Check if the king can make any legal move
+        // Check if any other piece has any legal move
+        // ...
         return false
     }
 
@@ -329,6 +423,61 @@ class King(override val color: Color, override val id: String) : Piece {
         }
 
         return true
+    }
+
+    fun isInCheckEnhanced(gameState: GameState, kingPosition: XY): Pair<List<XY>, Boolean> {
+        val givingCheck: MutableList<XY> = mutableListOf()
+        var inCheck = false
+
+        for (direction in DIRECTIONS) {
+            var distance = 1
+            while (true) {
+                val moveTo = XY(kingPosition.x + direction.x * distance, kingPosition.y + direction.y * distance)
+
+                if (!isValidSquare(moveTo)) break
+                val piece = gameState.board[moveTo]
+
+                if (isPinningPiece(piece, kingPosition, moveTo)) {
+                    givingCheck.add(moveTo)
+                    inCheck = true
+                    break
+                }
+                if (piece !is EM) break // If there is any piece, a friend or foe, stop checking this direction
+
+                distance++
+            }
+        }
+
+        // Check for knights
+        val knightMoves = listOf(
+            XY(1, 2), XY(2, 1), XY(-1, 2), XY(-2, 1),
+            XY(1, -2), XY(2, -1), XY(-1, -2), XY(-2, -1)
+        )
+        for (kMove in knightMoves) {
+            val knightPos = XY(kingPosition.x + kMove.x, kingPosition.y + kMove.y)
+            if (isValidSquare(knightPos)) {
+                val piece = gameState.board[knightPos]
+                if (piece is Knight && piece.color != this.color) {
+                    givingCheck.add(knightPos)
+                    inCheck = true
+                }
+            }
+        }
+
+        // Check for pawns
+        val pawnDirections = if (color == Color.W) listOf(XY(-1, 1), XY(1, 1)) else listOf(XY(-1, -1), XY(1, -1))
+        for (pDir in pawnDirections) {
+            val pawnPos = XY(kingPosition.x + pDir.x, kingPosition.y + pDir.y)
+            if (isValidSquare(pawnPos)) {
+                val piece = gameState.board[pawnPos]
+                if (piece is Pawn && piece.color != this.color) {
+                    givingCheck.add(pawnPos)
+                    inCheck = true
+                }
+            }
+        }
+
+        return givingCheck to inCheck
     }
 
     fun isInCheck(gameState: GameState, kingPosition: XY): Boolean {
@@ -565,13 +714,13 @@ class GameState {
     private var positionWK: XY = XY(3, 0)
     private var positionBK: XY = XY(3, 7)
 
-    private val wPieces: MutableMap<String, XY> = mutableMapOf(
+    val wPieces: MutableMap<String, XY> = mutableMapOf(
         WR1.id to XY(0, 0), WN1.id to XY(1, 0), WB1.id to XY(2, 0), WK1.id to XY(3, 0),
         WQ1.id to XY(4, 0), WB2.id to XY(5, 0), WN2.id to XY(6, 0), WR2.id to XY(7, 0),
         WP1.id to XY(0, 1), WP2.id to XY(1, 1), WP3.id to XY(2, 1), WP4.id to XY(3, 1),
         WP5.id to XY(4, 1), WP6.id to XY(5, 1), WP7.id to XY(6, 1), WP8.id to XY(7, 1)
     )
-    private val bPieces: MutableMap<String, XY> = mutableMapOf(
+    val bPieces: MutableMap<String, XY> = mutableMapOf(
         BR1.id to XY(0, 7), BN1.id to XY(1, 7), BB1.id to XY(2, 7), BK1.id to XY(3, 7),
         BQ1.id to XY(4, 7), BB2.id to XY(5, 7), BN2.id to XY(6, 7), BR2.id to XY(7, 7),
         BP1.id to XY(0, 6), BP2.id to XY(1, 6), BP3.id to XY(2, 6), BP4.id to XY(3, 6),
@@ -584,6 +733,21 @@ class GameState {
     var wInCheck = false
 
     private val history = LinkedList<MoveLog>()
+
+    fun getOppositePieces(color: Color) = when (color) {
+        Color.W -> bPieces
+        Color.B -> wPieces
+    }
+
+    fun getOppositePawns(color: Color): List<XY> = when (color) {
+        Color.W -> bPieces
+        Color.B -> wPieces
+    }.mapNotNull { (key, value) -> if (key[1] == 'p') value else null }
+
+    fun getOppositeMajorPieces(color: Color): List<XY> = when (color) {
+        Color.W -> bPieces
+        Color.B -> wPieces
+    }.mapNotNull { (key, value) -> if (key[1] != 'p' && key[1] != 'k') value else null }
 
     fun track(capturedPiece: Piece, movedPiecePair: Pair<Piece, XY>) {
         movedPiecePair.first.let { movedPiece ->
@@ -641,7 +805,7 @@ class GameState {
         }
     }
 
-    private fun setKingPosition(color: Color, to: XY) = when (color) {
+    fun setKingPosition(color: Color, to: XY) = when (color) {
         Color.W -> positionWK = to
         Color.B -> positionBK = to
     }
@@ -657,7 +821,7 @@ class GameState {
     }
 
     /** Returns the captured piece or EM */
-    private fun makeMove(from: XY, to: XY): Piece {
+    fun makeMove(from: XY, to: XY): Piece {
         val capturedPiece = this.board[to]
         this.board[to] = this.board[from]
         this.board[from] = EM
@@ -789,6 +953,14 @@ class GameState {
             XY(-1, 1),   // South-West
             XY(-1, 0),   // West
             XY(-1, -1)   // North-West
+        )
+
+        val EMPTY_MOVE_REQUEST = Move(
+            type = "MOVE",
+            piece = "",
+            squareFrom = "",
+            squareTo = "",
+            gameId = ""
         )
     }
 }
