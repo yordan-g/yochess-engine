@@ -23,7 +23,8 @@ class DefaultMoveService : MoveService {
     private val logger: Logger = Logger.getLogger(this::class.java)
 
     override fun processMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
-        if (gameState.turn.toString() != moveRequest.piece.first().uppercase()) {
+        // old - if (gameState.turn.toString() != moveRequest.piece.first().uppercase())
+        if (gameState.turn != gameState.board[from].color) {
             return moveRequest.copy(valid = false)
         }
 
@@ -31,10 +32,15 @@ class DefaultMoveService : MoveService {
             .board[from]
             .move(gameState, from, to, moveRequest)
             .let { (move, capturedPiece) ->
+                var moveResult = move
                 if (move.valid == true) {
                     gameState.logMove(moveRequest, capturedPiece.id)
-                    gameState.track(capturedPiece, gameState.board[to] to to)
-
+                    gameState.updateActivePieces(
+                        capturedPiece = capturedPiece,
+                        movedPiecePair = gameState.board[to] to to,
+                        promotionPair = move.promotion to from,
+                        castle = move.castle
+                    )
 
                     val opponentColor = gameState.getOpponentColor()
                     val opponentKing = gameState.getTheKing(opponentColor)
@@ -42,12 +48,16 @@ class DefaultMoveService : MoveService {
                     val res = opponentKing.isInCheckCheckmateStalemate(gameState, gameState.getKingPosition(opponentColor))
                     println("---- CHECKMATE --- ${res.first} ${res.first} ${res.first} ${res.first}")
 
-                    gameState.changeTurn()
+                    if (res.first) {
+                        moveResult.copy(end = "Checkmate")
+                    } else {
+                        gameState.changeTurn()
+                    }
                 }
 
-                gameState.board.print()
-                println("Valid: ${move.valid}")
-                move
+//                gameState.board.print()
+//                println("Valid: ${move.valid}")
+                moveResult
             }
     }
 }
@@ -59,6 +69,8 @@ sealed interface Piece {
     fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean
     fun clone(): Piece
     fun signature(): String
+
+    fun cLow() = color.name.lowercase()
 }
 
 class Pawn(override val color: Color, override val id: String) : Piece {
@@ -70,6 +82,7 @@ class Pawn(override val color: Color, override val id: String) : Piece {
         var moveResult = moveRequest.copy(valid = false)
         var capturedPiece: Piece = EM
         var enPassantCapturePosition: XY? = null
+        var pawnBeforePromotion: Piece? = null
 
         when {
             // 1. One-step forward
@@ -77,7 +90,8 @@ class Pawn(override val color: Color, override val id: String) : Piece {
             -> {
                 gameState.board[from] = EM
                 if (to.y == promotionRank) {
-                    gameState.board[to] = promotePawn(moveRequest.promotion)
+                    pawnBeforePromotion = this
+                    gameState.board[to] = promotePawn(moveRequest.promotion, gameState)
                 } else {
                     gameState.board[to] = this
                 }
@@ -98,7 +112,8 @@ class Pawn(override val color: Color, override val id: String) : Piece {
                 gameState.board[from] = EM
                 if (to.y == promotionRank) {
                     capturedPiece = gameState.board[to]
-                    gameState.board[to] = promotePawn(moveRequest.promotion)
+                    pawnBeforePromotion = this
+                    gameState.board[to] = promotePawn(moveRequest.promotion, gameState)
                 } else {
                     capturedPiece = gameState.board[to]
                     gameState.board[to] = this
@@ -122,25 +137,36 @@ class Pawn(override val color: Color, override val id: String) : Piece {
         }
 
         // 6. Is the king under a check after move
-        gameState.getTheKing(color)
+        gameState
+            .getTheKing(color)
             .isTheKingSafeAfterPieceMoved(gameState)
-            .also {
-                if (!it) gameState.revertMove(capturedPiece, from, to, enPassantCapturePosition)
-                moveResult = moveRequest.copy(valid = it, enPassantCapture = enPassantCapturePosition?.toFileRank() ?: null)
+            .also { isSafe ->
+                if (!isSafe) gameState.revertMove(capturedPiece, from, to, enPassantCapturePosition, pawnBeforePromotion)
+                moveResult = moveRequest.copy(valid = isSafe, enPassantCapture = enPassantCapturePosition?.toFileRank() ?: null)
             }
 
         return moveResult to capturedPiece
     }
 
-    private fun promotePawn(promotion: String?): Piece {
-        return when (val piece = promotion?.lastOrNull()) {
+    private fun promotePawn(promotion: String?, gameState: GameState): Piece {
+        if (promotion == null || promotion.length != 2) throw IllegalArgumentException("Error: Piece: $promotion is not a valid chess notation!")
+
+        val char = promotion[1].lowercase().takeIf { it in setOf("q", "r", "n", "b") } ?: throw IllegalArgumentException("Trying to promote invalid character")
+        val activePieces = gameState.getPieces(color)
+        val promotionId = activePieces
+            .filter { it.key[1].toString() == char }
+            .takeIf { it.isNotEmpty() }
+            ?.map { it.key[2].digitToIntOrNull() ?: 0 }
+            ?.maxOf { it }
+            ?.let { "${this.cLow()}" + char + it.plus(1) } ?: this.cLow() + char + "1"
+
+        return when (char) {
             // todo - increment unique ids here because it will break tracking of active pieces
-            'q' -> Queen(color, id)
-            'r' -> Rook(color, id).apply { hasMoved = true }
-            'n' -> Knight(color, id)
-            'b' -> Bishop(color, id)
-            null -> throw IllegalArgumentException("Error: Promotion piece not provided!")
-            else -> throw IllegalArgumentException("Error: Piece: $piece is not a valid chess notation!")
+            "q" -> Queen(color, promotionId)
+            "r" -> Rook(color, promotionId).apply { hasMoved = true }
+            "n" -> Knight(color, promotionId)
+            "b" -> Bishop(color, promotionId)
+            else -> throw IllegalArgumentException("Error: Piece: $char is not a valid chess notation!")
         }
     }
 
@@ -214,9 +240,10 @@ class King(override val color: Color, override val id: String) : Piece {
             if (!isValidSquare(newPos)) continue
             if (!isValidMove(gameState.board, current, newPos)) continue
 
-            gameState.setKingPosition(color, newPos) // todo: do I need also to capture the piece?
+            // todo: Do I need to actually use the kingPosition state here?
+//            gameState.setKingPosition(color, newPos)
             if (!isInCheck(gameState, newPos)) {
-                gameState.setKingPosition(color, current)
+//                gameState.setKingPosition(color, current)
                 return true
             }
         }
@@ -319,7 +346,7 @@ class King(override val color: Color, override val id: String) : Piece {
         isCastleAttempt(from, to).let { castleAttempt ->
             if (castleAttempt.first) {
                 return gameState
-                    .tryKingMove(this, from, to, moveRequest, castleAttempt).also { (move, capturedPiece) ->
+                    .tryKingMove(this, from, to, moveRequest, castleAttempt).also { (move, _) ->
                         if (move.valid == true) hasMoved = true
                     }
             }
@@ -406,6 +433,17 @@ class King(override val color: Color, override val id: String) : Piece {
 
     fun isTheKingSafeAfterPieceMoved(gameState: GameState): Boolean {
         val kingPosition = gameState.getKingPosition(color)
+        // todo: Could this check be in the loop below?
+        val pawnDirections = if (color == Color.W) listOf(XY(-1, 1), XY(1, 1)) else listOf(XY(-1, -1), XY(1, -1))
+        for (pDir in pawnDirections) {
+            val pawnPos = XY(kingPosition.x + pDir.x, kingPosition.y + pDir.y)
+            if (isValidSquare(pawnPos)) {
+                val piece = gameState.board[pawnPos]
+                if (piece is Pawn && piece.color != color) {
+                    return false
+                }
+            }
+        }
 
         for (direction in DIRECTIONS) {
             var distance = 1
@@ -436,7 +474,7 @@ class King(override val color: Color, override val id: String) : Piece {
 
                 if (!isValidSquare(moveTo)) break
                 val piece = gameState.board[moveTo]
-
+                // todo check for pawns giving check?
                 if (isPinningPiece(piece, kingPosition, moveTo)) {
                     givingCheck.add(moveTo)
                     inCheck = true
@@ -524,6 +562,7 @@ class King(override val color: Color, override val id: String) : Piece {
         }
 
         // Checking for the enemy king
+        // todo is this accurate?
         for (dir in DIRECTIONS) {
             val checkPos = kingPosition + dir
             if (isValidSquare(checkPos)) {
@@ -728,45 +767,56 @@ class GameState {
     )
     private val wCaptures = LinkedList<String>()
     private val bCaptures = LinkedList<String>()
-
-    var bInCheck = false
-    var wInCheck = false
-
     private val history = LinkedList<MoveLog>()
 
-    fun getOppositePieces(color: Color) = when (color) {
-        Color.W -> bPieces
-        Color.B -> wPieces
-    }
+    fun getOpponentColor(): Color = if (turn == Color.W) Color.B else Color.W
 
-    fun getOppositePawns(color: Color): List<XY> = when (color) {
-        Color.W -> bPieces
-        Color.B -> wPieces
-    }.mapNotNull { (key, value) -> if (key[1] == 'p') value else null }
+    fun getOppositePieces(color: Color) = if (color == Color.W) bPieces else wPieces
 
-    fun getOppositeMajorPieces(color: Color): List<XY> = when (color) {
-        Color.W -> bPieces
-        Color.B -> wPieces
-    }.mapNotNull { (key, value) -> if (key[1] != 'p' && key[1] != 'k') value else null }
+    fun getPieces(color: Color) = if (color == Color.W) wPieces else bPieces
 
-    fun track(capturedPiece: Piece, movedPiecePair: Pair<Piece, XY>) {
-        movedPiecePair.first.let { movedPiece ->
-            when (movedPiece.color) {
-                Color.W -> {
-                    // todo: could handle the error even thought it's guarded already
-                    wPieces.replace(movedPiece.id, movedPiecePair.second)
-                    if (capturedPiece != EM) {
-                        wCaptures.add(capturedPiece.id)
-                        bPieces.remove(capturedPiece.id)
+    fun updateActivePieces(capturedPiece: Piece, movedPiecePair: Pair<Piece, XY>, promotionPair: Pair<String?, XY>, castle: Castle?) {
+        when (movedPiecePair.first.color) {
+            Color.W -> {
+                when {
+                    castle != null -> {
+                        wPieces.replace(movedPiecePair.first.id, movedPiecePair.second)
+                        wPieces.replace(board[castle.rookPosStart.toXY()].id, castle.rookPosEnd.toXY())
+                    }
+
+                    promotionPair.first != null -> {
+                        // remove pawn
+                        wPieces.remove(wPieces.entries.find { it.value == promotionPair.second }?.key)
+                        wPieces.put(movedPiecePair.first.id, movedPiecePair.second)
+                    }
+                    // normal move
+                    else -> wPieces.replace(movedPiecePair.first.id, movedPiecePair.second)
+                }
+                if (capturedPiece != EM) {
+                    wCaptures.add(capturedPiece.id)
+                    bPieces.remove(capturedPiece.id)
+                }
+            }
+
+            Color.B -> {
+                when {
+                    castle != null -> {
+                        bPieces.replace(movedPiecePair.first.id, movedPiecePair.second)
+                        bPieces.replace(board[castle.rookPosStart.toXY()].id, castle.rookPosEnd.toXY())
+                    }
+
+                    promotionPair.first != null -> {
+                        bPieces.remove(bPieces.entries.find { it.value == promotionPair.second }?.key)
+                        bPieces.put(movedPiecePair.first.id, movedPiecePair.second)
+                    }
+
+                    else -> {
+                        bPieces.replace(movedPiecePair.first.id, movedPiecePair.second)
                     }
                 }
-
-                Color.B -> {
-                    bPieces.replace(movedPiece.id, movedPiecePair.second)
-                    if (capturedPiece != EM) {
-                        bCaptures.add(capturedPiece.id)
-                        wPieces.remove(capturedPiece.id)
-                    }
+                if (capturedPiece != EM) {
+                    bCaptures.add(capturedPiece.id)
+                    wPieces.remove(capturedPiece.id)
                 }
             }
         }
@@ -780,18 +830,6 @@ class GameState {
         Color.W -> "${moveRequest.piece}:${moveRequest.squareFrom}:${moveRequest.squareTo}:$capture"
             .also { history.add(MoveLog(it)) }
     }
-
-    fun getOpponentColor(): Color = if (turn == Color.W) Color.B else Color.W
-
-//    fun setKingInCheck(color: Color) = when (color) {
-//        Color.W -> wInCheck = true
-//        Color.B -> bInCheck = true
-//    }
-//
-//    fun isKingInCheck(color: Color) = when (color) {
-//        Color.W -> wInCheck
-//        Color.B -> bInCheck
-//    }
 
     fun changeTurn(): Color = when (turn) {
         Color.W -> {
@@ -849,15 +887,15 @@ class GameState {
         if (castleAttempt.first) {
             return if (king.canCastle(this, from, to)) {
                 setKingPosition(king.color, to)
-                val capturedPiece = makeMove(from, to)
-                makeMove(castleAttempt.second, castleAttempt.third)
+                makeMove(from, to) // king moved
+                makeMove(castleAttempt.second, castleAttempt.third) // room moved, from, to
                 moveRequest.copy(
                     valid = true, castle = Castle(
                         rook = Rook(king.color, id = "${king.color.toString().lowercase()}r").signature().lowercase(),
                         rookPosStart = castleAttempt.second.toFileRank(),
                         rookPosEnd = castleAttempt.third.toFileRank()
                     )
-                ) to capturedPiece
+                ) to EM
             } else {
                 moveRequest.copy(valid = false) to EM
             }
@@ -877,14 +915,23 @@ class GameState {
         }
     }
 
-    fun revertMove(capturedPiece: Piece, from: XY, to: XY, enPassantCapturePosition: XY?) {
-        if (enPassantCapturePosition != null) {
-            board[from] = board[to]
-            board[to] = EM
-            board[enPassantCapturePosition] = capturedPiece
-        } else {
-            board[from] = board[to]
-            board[to] = capturedPiece
+    fun revertMove(capturedPiece: Piece, from: XY, to: XY, enPassantCapturePosition: XY?, pawnBeforePromotion: Piece? = null) {
+        when {
+            enPassantCapturePosition != null -> {
+                board[from] = board[to]
+                board[to] = EM
+                board[enPassantCapturePosition] = capturedPiece
+            }
+
+            pawnBeforePromotion != null -> {
+                board[from] = pawnBeforePromotion
+                board[to] = capturedPiece
+            }
+
+            else -> {
+                board[from] = board[to]
+                board[to] = capturedPiece
+            }
         }
     }
 
@@ -926,8 +973,8 @@ class GameState {
 
         val STARTING_BOARD: Array<Array<Piece>> =
             arrayOf(
-                //     (a  , b  , c  , d  , e  , f  , g  , h  ),
                 //     (0  , 1  , 2  , 3  , 4  , 5  , 6  , 7  ),
+                //     (h  , g  , f  , e  , d  , c  , b  , a  ),
                 arrayOf(WR1, WN1, WB1, WK1, WQ1, WB2, WN2, WR2), // 1 | 0
                 arrayOf(WP1, WP2, WP3, WP4, WP5, WP6, WP7, WP8), // 2 | 1
                 arrayOf(EM0, EM0, EM0, EM0, EM0, EM0, EM0, EM0), // 3 | 2

@@ -18,7 +18,8 @@ data class Move(
     val position: String? = null,
     val enPassantCapture: String? = null,
     val promotion: String? = null,
-    val castle: Castle? = null
+    val castle: Castle? = null,
+    val end: String? = null
 )
 
 data class Castle(

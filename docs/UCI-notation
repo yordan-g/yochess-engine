@@ -1,0 +1,15 @@
+e2e4: This move represents a pawn moving from e2 to e4.
+d7d5: This move indicates a pawn moving from d7 to d5.
+g1f3: This denotes a knight moving from g1 to f3.
+e7e5: A pawn moves from e7 to e5.
+f1b5: This represents a bishop moving from f1 to b5.
+b8c6: A knight moves from b8 to c6.
+e1g1: This is the kingside castling for white. In UCI notation, castling is denoted by the king's initial and final squares.
+e8g8: This is the kingside castling for black.
+e1c1: This denotes queenside castling for white.
+e8c8: Queenside castling for black.
+d2d4: A pawn moves from d2 to d4.
+c7c5: This move shows a pawn moving from c7 to c5.
+g8f6: A knight moves from g8 to f6.
+f3g5: This indicates a knight moving from f3 to g5.
+f7f8q: This represents a pawn promotion. The pawn moves from f7 to f8 and is promoted to a queen. The piece to which the pawn is promoted is indicated by the last letter (q for queen, r for rook, n for knight, b for bishop).
