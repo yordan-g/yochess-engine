@@ -543,6 +543,21 @@ class King(override val color: Color, override val id: String) : Piece {
             }
         }
 
+        // Check for knights
+        val knightMoves = listOf(
+            XY(1, 2), XY(2, 1), XY(-1, 2), XY(-2, 1),
+            XY(1, -2), XY(2, -1), XY(-1, -2), XY(-2, -1)
+        )
+        for (kMove in knightMoves) {
+            val knightPos = XY(kingPosition.x + kMove.x, kingPosition.y + kMove.y)
+            if (isValidSquare(knightPos)) {
+                val piece = gameState.board[knightPos]
+                if (piece is Knight && piece.color != this.color) {
+                    return true
+                }
+            }
+        }
+
         // check all paths for threats
         for (direction in DIRECTIONS) {
             var distance = 1
@@ -558,21 +573,6 @@ class King(override val color: Color, override val id: String) : Piece {
                 if (piece !is EM && piece.color == color && piece !is King) break // stop path check because allied piece is blocking potential check
                 if (piece !is EM && piece.color != color) break // stop path check because enemy piece is blocking potential check
                 distance++
-            }
-        }
-
-        // Check for knights
-        val knightMoves = listOf(
-            XY(1, 2), XY(2, 1), XY(-1, 2), XY(-2, 1),
-            XY(1, -2), XY(2, -1), XY(-1, -2), XY(-2, -1)
-        )
-        for (kMove in knightMoves) {
-            val knightPos = XY(kingPosition.x + kMove.x, kingPosition.y + kMove.y)
-            if (isValidSquare(knightPos)) {
-                val piece = gameState.board[knightPos]
-                if (piece is Knight && piece.color != this.color) {
-                    return true
-                }
             }
         }
 
