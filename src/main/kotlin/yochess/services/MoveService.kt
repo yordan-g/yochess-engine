@@ -49,14 +49,14 @@ class DefaultMoveService : MoveService {
                     println("---- CHECKMATE --- ${res.first} ${res.first} ${res.first} ${res.first}")
 
                     if (res.first) {
-                        moveResult.copy(end = "Checkmate")
+                        moveResult = moveResult.copy(end = "Checkmate")
                     } else {
                         gameState.changeTurn()
                     }
                 }
 
-//                gameState.board.print()
-//                println("Valid: ${move.valid}")
+                println("Valid: ${move.valid}")
+                gameState.board.print()
                 moveResult
             }
     }
@@ -519,36 +519,6 @@ class King(override val color: Color, override val id: String) : Piece {
     }
 
     fun isInCheck(gameState: GameState, kingPosition: XY): Boolean {
-        for (direction in DIRECTIONS) {
-            var distance = 1
-            while (true) {
-                val moveTo = XY(kingPosition.x + direction.x * distance, kingPosition.y + direction.y * distance)
-
-                if (!isValidSquare(moveTo)) break
-                val piece = gameState.board[moveTo]
-
-                if (isPinningPiece(piece, kingPosition, moveTo)) return true
-                if (piece !is EM) break // If there is any piece, a friend or foe, stop checking this direction
-
-                distance++
-            }
-        }
-
-        // Check for knights
-        val knightMoves = listOf(
-            XY(1, 2), XY(2, 1), XY(-1, 2), XY(-2, 1),
-            XY(1, -2), XY(2, -1), XY(-1, -2), XY(-2, -1)
-        )
-        for (kMove in knightMoves) {
-            val knightPos = XY(kingPosition.x + kMove.x, kingPosition.y + kMove.y)
-            if (isValidSquare(knightPos)) {
-                val piece = gameState.board[knightPos]
-                if (piece is Knight && piece.color != this.color) {
-                    return true
-                }
-            }
-        }
-
         // Check for pawns
         val pawnDirections = if (color == Color.W) listOf(XY(-1, 1), XY(1, 1)) else listOf(XY(-1, -1), XY(1, -1))
         for (pDir in pawnDirections) {
@@ -568,6 +538,39 @@ class King(override val color: Color, override val id: String) : Piece {
             if (isValidSquare(checkPos)) {
                 val piece = gameState.board[checkPos]
                 if ((piece is King) && (piece.color != color)) {
+                    return true
+                }
+            }
+        }
+
+        // check all paths for threats
+        for (direction in DIRECTIONS) {
+            var distance = 1
+            while (true) {
+                val moveTo = XY(kingPosition.x + direction.x * distance, kingPosition.y + direction.y * distance)
+
+                if (!isValidSquare(moveTo)) break
+                val piece = gameState.board[moveTo]
+
+                if (isPinningPiece(piece, kingPosition, moveTo)) return true
+
+                // when checking the path of the king in each direction. Could encounter the king itself and this should NOT break the path check.
+                if (piece !is EM && piece.color == color && piece !is King) break // stop path check because allied piece is blocking potential check
+                if (piece !is EM && piece.color != color) break // stop path check because enemy piece is blocking potential check
+                distance++
+            }
+        }
+
+        // Check for knights
+        val knightMoves = listOf(
+            XY(1, 2), XY(2, 1), XY(-1, 2), XY(-2, 1),
+            XY(1, -2), XY(2, -1), XY(-1, -2), XY(-2, -1)
+        )
+        for (kMove in knightMoves) {
+            val knightPos = XY(kingPosition.x + kMove.x, kingPosition.y + kMove.y)
+            if (isValidSquare(knightPos)) {
+                val piece = gameState.board[knightPos]
+                if (piece is Knight && piece.color != this.color) {
                     return true
                 }
             }
@@ -1019,14 +1022,27 @@ operator fun Array<Array<Piece>>.set(p: XY, piece: Piece) {
 }
 
 fun Array<Array<Piece>>.print() {
-    this.forEach { row ->
+
+    this.forEachIndexed { index, row ->
         var str = ""
         row.forEach { p ->
-            str += "${p.signature()}, "
+            val strPlus = when (p) {
+                is EM -> p.signature()
+                else -> when (p.color) {
+                    Color.W -> yellow(p.signature())
+                    Color.B -> blue(p.signature())
+                }
+            }
+
+            str += "$strPlus, "
         }
-        println(str)
+        println(str + "| ${index + 1}")
     }
+    println("h , g , f , e , d , c , b , a ")
 }
+
+fun yellow(text: String): String = "\u001B[33m$text\u001B[0m"
+fun blue(text: String): String = "\u001B[34m$text\u001B[0m"
 
 enum class Color { W, B }
 

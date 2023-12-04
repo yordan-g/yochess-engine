@@ -5,11 +5,8 @@ import jakarta.inject.Inject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import yochess.dtos.Move
-import yochess.services.GameState
+import yochess.services.*
 import yochess.services.GameState.Companion.EMPTY_MOVE_REQUEST
-import yochess.services.MoveLog
-import yochess.services.MoveService
-import yochess.services.toXY
 import java.nio.file.Files
 import java.nio.file.Paths
 
@@ -27,20 +24,19 @@ class CheckmateTest {
             println("### Start Game: ${index + 1}")
 
             val gameStateTest = GameState()
-            var moveRes: Move? = null;
-            moves.forEach { move ->
+            var moveRes: Move? = null
+            moves.forEachIndexed { index1, move ->
                 val mr = if (move.length == 5) {
                     EMPTY_MOVE_REQUEST.copy(promotion = "x${move.last()}")
                 } else {
                     EMPTY_MOVE_REQUEST
                 }
 
-                moveRes = moveService.processMove(
-                    gameStateTest,
-                    move.slice(0..1).toXY(),
-                    move.slice(2..3).toXY(),
-                    mr
-                )
+                val from = move.slice(0..1).toXY()
+                val to = move.slice(2..3).toXY()
+
+                println("## MOVE: $move -- $from to $to. From P: ${gameStateTest.board[from].signature()} | index: $index1")
+                moveRes = moveService.processMove(gameStateTest, from, to, mr)
             }
 
             assertEquals("Checkmate", moveRes?.end, "Optional assertion message")
@@ -49,7 +45,7 @@ class CheckmateTest {
     }
 
     private fun readFromFile(): List<Pair<List<String>, String>> {
-        val url = this::class.java.classLoader.getResource("test-file.txt")
+        val url = this::class.java.classLoader.getResource("test-file1.txt")
         val path = Paths.get(url.toURI())
         val lines = Files.newBufferedReader(path).use { reader ->
             reader.readLines()
@@ -64,11 +60,9 @@ class CheckmateTest {
     }
 
 }
-//    @Test
-//    fun testReadFile() {
-//        val url = this::class.java.classLoader.getResource("test-file.txt")
-//        val file = Paths.get(url.toURI())
-//        val content = Files.readString(file)
-//
-//        // Use 'content' in your test assertions
-//    }
+
+operator fun Array<Array<Piece>>.get(p: XY): Piece = this[p.y][p.x]
+
+operator fun Array<Array<Piece>>.set(p: XY, piece: Piece) {
+    this[p.y][p.x] = piece
+}
