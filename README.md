@@ -10,3 +10,4 @@ Server for the game logic in Kotlin
 
 # PGN parsing tool
 - https://www.cs.kent.ac.uk/people/staff/djb/pgn-extract/
+- '^\n'

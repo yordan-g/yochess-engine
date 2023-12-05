@@ -49,7 +49,7 @@ class DefaultGamesService : GamesManager {
     }
 
     override fun broadcastMove(moveResult: Move) {
-        logger.info("Message Received: $moveResult, valid: ${moveResult.valid}")
+        logger.debug("Message Received: $moveResult, valid: ${moveResult.valid}")
 
         activeGames[moveResult.gameId]?.let {
             it.player1.asyncRemote.sendObject(moveResult)

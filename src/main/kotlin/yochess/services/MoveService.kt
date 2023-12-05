@@ -46,7 +46,7 @@ class DefaultMoveService : MoveService {
                     val opponentKing = gameState.getTheKing(opponentColor)
 
                     val res = opponentKing.isInCheckCheckmateStalemate(gameState, gameState.getKingPosition(opponentColor))
-                    println("---- CHECKMATE --- ${res.first} ${res.first} ${res.first} ${res.first}")
+                    logger.debug("---- CHECKMATE --- ${res.first} ${res.first} ${res.first} ${res.first}")
 
                     if (res.first) {
                         moveResult = moveResult.copy(end = "Checkmate")
@@ -55,7 +55,7 @@ class DefaultMoveService : MoveService {
                     }
                 }
 
-                println("Valid: ${move.valid}")
+//                logger.debug("Valid: ${move.valid}")
                 logger.debug("End move: \n${gameState.board.print()}")
                 moveResult
             }
@@ -277,29 +277,35 @@ class King(override val color: Color, override val id: String) : Piece {
         if (threats.size > 1) return false
         if (gameState.board[threats.first()] is Knight) return false
         val threatPos = threats.first()
+        // determine wheter the check is horizontal, vertical, diagonal
         val dx = threatPos.x - kingPosition.x
         val dy = threatPos.y - kingPosition.y
-        val stepX = if (dx > 0) 1 else -1
-        val stepY = if (dy > 0) 1 else -1
+        val stepX = if (dx == 0) 0 else if (dx > 0) 1 else -1
+        val stepY = if (dy == 0) 0 else if (dy > 0) 1 else -1
 
-        var defendSquare = when {
-            dy == 0 -> XY(kingPosition.x + stepX, kingPosition.y) // horizontal
-            dx == 0 -> XY(kingPosition.x, kingPosition.y + stepY) // vertical
-            abs(dx) == abs(dy) -> XY(kingPosition.x + stepX, kingPosition.y + stepY) // diagonal
-            else -> throw IllegalArgumentException("King in check but there was an error determining the square to block!")
+        var currentSquare = kingPosition
+        val squaresToBlock = mutableListOf<XY>()
+
+        while (currentSquare != threatPos) {
+            currentSquare = XY(currentSquare.x + stepX, currentSquare.y + stepY)
+            if (currentSquare != threatPos) {
+                squaresToBlock.add(currentSquare)
+            }
         }
 
         val oppositePieces = gameState.getOppositePieces(gameState.board[threats.first()].color)
 
-        for (entry in oppositePieces) {
-            if (entry.key[1] == 'k') continue
-            val from = entry.value
-            val piece = gameState.board[from]
-            piece.move(gameState, from, defendSquare, EMPTY_MOVE_REQUEST).also { (move, capture) ->
-                if (move.valid == true) {
-                    gameState.board[from] = piece
-                    gameState.board[defendSquare] = capture
-                    return true
+        for (defendSquare in squaresToBlock) {
+            for (entry in oppositePieces) {
+                if (entry.key[1] == 'k') continue
+                val from = entry.value
+                val piece = gameState.board[from]
+                piece.move(gameState, from, defendSquare, EMPTY_MOVE_REQUEST).also { (move, capture) ->
+                    if (move.valid == true) {
+                        gameState.board[from] = piece
+                        gameState.board[defendSquare] = capture
+                        return true
+                    }
                 }
             }
         }
