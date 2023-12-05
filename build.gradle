@@ -25,6 +25,7 @@ dependencies {
 
     testImplementation 'io.quarkus:quarkus-junit5'
     testImplementation 'io.rest-assured:rest-assured'
+    testImplementation 'io.kotest:kotest-assertions-core:5.8.0'
 }
 
 group 'yochess'

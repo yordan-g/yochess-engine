@@ -56,7 +56,7 @@ class DefaultMoveService : MoveService {
                 }
 
                 println("Valid: ${move.valid}")
-                gameState.board.print()
+                logger.debug("End move: \n${gameState.board.print()}")
                 moveResult
             }
     }
@@ -1021,10 +1021,10 @@ operator fun Array<Array<Piece>>.set(p: XY, piece: Piece) {
     this[p.y][p.x] = piece
 }
 
-fun Array<Array<Piece>>.print() {
+fun Array<Array<Piece>>.print(): String {
+    var res = ""
 
     this.forEachIndexed { index, row ->
-        var str = ""
         row.forEach { p ->
             val strPlus = when (p) {
                 is EM -> p.signature()
@@ -1034,11 +1034,11 @@ fun Array<Array<Piece>>.print() {
                 }
             }
 
-            str += "$strPlus, "
+            res += "$strPlus, "
         }
-        println(str + "| ${index + 1}")
+        res += "| ${index + 1}\n"
     }
-    println("h , g , f , e , d , c , b , a ")
+    return "$res h , g , f , e , d , c , b , a "
 }
 
 fun yellow(text: String): String = "\u001B[33m$text\u001B[0m"

@@ -1,0 +1,7 @@
+# Test package
+quarkus:
+  log:
+    level: INFO
+    category:
+      "yochess":
+        level: INFO
