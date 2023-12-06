@@ -30,7 +30,7 @@ class CheckmateTest {
         val realGames = readFromFile()
 
         realGames.forEachIndexed { gIn, realGame ->
-            logger.info("### Starting Game N: ${gIn + 1}")
+            logger.info("### Start Testing Game N: ${gIn + 1}")
             val yochessGameState = GameState()
             var moveResult: Move? = null
 
@@ -60,7 +60,7 @@ class CheckmateTest {
      * input format, UCI notation - "... h6g5 h8h4 { "8/5p2/3p2p1/3Pp1k1/3nP1PQ/5PK1/6N1/3q4 b - - 3 51" } 1-0"
      * **/
     private fun readFromFile(): List<RealGame> {
-        val url = this::class.java.classLoader.getResource("scary.txt") ?: throw FileNotFoundException("test-file1.txt not found")
+        val url = this::class.java.classLoader.getResource("checkmate-15000.txt") ?: throw FileNotFoundException("test-file1.txt not found")
         val path = Paths.get(url.toURI())
 
         return Files.newBufferedReader(path).use { reader ->
