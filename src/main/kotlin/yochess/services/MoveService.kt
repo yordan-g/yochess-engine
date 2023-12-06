@@ -98,7 +98,13 @@ class Pawn(override val color: Color, override val id: String) : Piece {
                 moveResult = moveRequest.copy(valid = true)
             }
             // 2. Initial Two-step forward
-            (from.y == startingRank && to.y == from.y + (2 * direction) && to.x == from.x && gameState.board[to] is EM)
+            (
+                from.y == startingRank &&
+                    to.y == from.y + (2 * direction) &&
+                    to.x == from.x &&
+                    gameState.board[to] is EM &&
+                    gameState.board[XY(to.x, to.y - direction)] is EM
+                )
             -> {
                 gameState.board[to] = this
                 gameState.board[from] = EM
@@ -811,7 +817,7 @@ class GameState {
                 when {
                     castle != null -> {
                         bPieces.replace(movedPiecePair.first.id, movedPiecePair.second)
-                        bPieces.replace(board[castle.rookPosStart.toXY()].id, castle.rookPosEnd.toXY())
+                        bPieces.replace(board[castle.rookPosEnd.toXY()].id, castle.rookPosEnd.toXY())
                     }
 
                     promotionPair.first != null -> {

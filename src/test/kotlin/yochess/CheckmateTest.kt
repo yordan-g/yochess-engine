@@ -46,7 +46,11 @@ class CheckmateTest {
             }
 
             val yochessEndPieces = yochessGameState.wPieces.size + yochessGameState.bPieces.size
-            withClue("Failed to validate Game N: ${gIn + 1}. RealGame - '${realGame}'") {
+            withClue(
+                "Failed to validate Game N: ${gIn + 1}.\n" +
+                    " State: Yochess: '$yochessEndPieces', Real: ${realGame.endPieces.length}\n" +
+                    "'${realGame}'"
+            ) {
                 moveRes?.end shouldBe "Checkmate"
                 yochessEndPieces shouldBe realGame.endPieces.length
                 yochessGameState.turn shouldBe realGame.winner
