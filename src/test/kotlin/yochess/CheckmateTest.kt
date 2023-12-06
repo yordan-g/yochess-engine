@@ -4,6 +4,7 @@ import io.kotest.assertions.withClue
 import io.kotest.matchers.shouldBe
 import io.quarkus.test.junit.QuarkusTest
 import jakarta.inject.Inject
+import org.jboss.logging.Logger
 import org.junit.jupiter.api.Test
 import yochess.dtos.Move
 import yochess.services.*
@@ -12,51 +13,46 @@ import java.io.FileNotFoundException
 import java.nio.file.Files
 import java.nio.file.Paths
 
-data class RealGame(
-    val moves: List<String>,
-    val winner: Color,
-    val endPieces: String
-)
-
 @QuarkusTest
 class CheckmateTest {
-    // todo: Idea for bug checking. Parse lichess DB with only the url tag so that if a game fails in the test.
-    //  I print the url and inspect the game state vs my game state
-    // todo: Idea 2: alongside UCI notation, parse 2nd file with FEN notation of the endgame. Can compare the pieces left in the FEN and my game state.
+    private val logger: Logger = Logger.getLogger(this::class.java)
 
     @Inject
     lateinit var moveService: MoveService
 
+    /**
+     *  Parse thousands of real life games ending in checkmate from files.
+     *  Run every one through the MoveService.
+     *  Assert if yochess game is in end state matching a real game.
+     *  */
     @Test
-    fun checkMateTest() {
-        val games = readFromFile()
+    fun `GIVEN many real games ending in checkmate THEN yochess end state matches a real game`() {
+        val realGames = readFromFile()
 
-        games.forEachIndexed { gIn, realGame ->
-            println("### Start Game: ${gIn + 1}")
+        realGames.forEachIndexed { gIn, realGame ->
+            logger.info("### Starting Game N: ${gIn + 1}")
             val yochessGameState = GameState()
-            var moveRes: Move? = null
+            var moveResult: Move? = null
 
             realGame.moves.forEachIndexed { mIn, move ->
                 val from = move.slice(0..1).toXY()
                 val to = move.slice(2..3).toXY()
+                logger.debug("## MOVE: $move -- $from to $to. From P: ${yochessGameState.board[from].signature()} | index: $mIn")
 
-                println("## MOVE: $move -- $from to $to. From P: ${yochessGameState.board[from].signature()} | index: $mIn")
-                moveRes = moveService.processMove(yochessGameState, from, to, getMoveRequest(move))
-                moveRes!!.valid shouldBe true
+                moveResult = moveService.processMove(yochessGameState, from, to, getMoveRequest(move))
+                moveResult!!.valid shouldBe true
             }
 
             val yochessEndPieces = yochessGameState.wPieces.size + yochessGameState.bPieces.size
             withClue(
                 "Failed to validate Game N: ${gIn + 1}.\n" +
-                    " State: Yochess: '$yochessEndPieces', Real: ${realGame.endPieces.length}\n" +
+                    " State - Yochess: '$yochessEndPieces', Real: ${realGame.endPieces.length}\n" +
                     "'${realGame}'"
             ) {
-                moveRes?.end shouldBe "Checkmate"
+                moveResult?.end shouldBe "Checkmate"
                 yochessEndPieces shouldBe realGame.endPieces.length
                 yochessGameState.turn shouldBe realGame.winner
             }
-
-//            println("### endPs: ${realGame.endPieces}")
         }
     }
 
@@ -89,11 +85,13 @@ class CheckmateTest {
             EMPTY_MOVE_REQUEST
         }
     }
-
-    companion object {
-//        val ps = setOf('K', 'Q', 'R', 'B', 'N', 'P', 'k', 'q', 'r', 'b', 'n', 'p')
-    }
 }
+
+data class RealGame(
+    val moves: List<String>,
+    val winner: Color,
+    val endPieces: String
+)
 
 operator fun Array<Array<Piece>>.get(p: XY): Piece = this[p.y][p.x]
 

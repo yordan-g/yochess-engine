@@ -23,7 +23,6 @@ class DefaultMoveService : MoveService {
     private val logger: Logger = Logger.getLogger(this::class.java)
 
     override fun processMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
-        // old - if (gameState.turn.toString() != moveRequest.piece.first().uppercase())
         if (gameState.turn != gameState.board[from].color) {
             return moveRequest.copy(valid = false)
         }
@@ -55,7 +54,6 @@ class DefaultMoveService : MoveService {
                     }
                 }
 
-//                logger.debug("Valid: ${move.valid}")
                 logger.debug("End move: \n${gameState.board.print()}")
                 moveResult
             }
@@ -76,7 +74,7 @@ sealed interface Piece {
 class Pawn(override val color: Color, override val id: String) : Piece {
     private val direction: Int = if (color == Color.W) 1 else -1
     private val startingRank: Int = if (color == Color.W) 1 else 6
-    private val promotionRank = if (color == Color.W) 7 else 0
+    val promotionRank = if (color == Color.W) 7 else 0
 
     override fun move(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, Piece> {
         var moveResult = moveRequest.copy(valid = false)
@@ -263,14 +261,42 @@ class King(override val color: Color, override val id: String) : Piece {
         val threat = gameState.board[threatPos]
         val oppositePieces = gameState.getOppositePieces(threat.color)
 
+        // the check giving piece is a pawn in en passant state
+        if (gameState.enPassantTarget != null && gameState.board[threatPos] is Pawn) {
+            for (pawnEntry in oppositePieces.entries.filter { it.key[1] == 'p' }) {
+                val from = pawnEntry.value
+                val pawn = gameState.board[from]
+                pawn.move(gameState, from, gameState.enPassantTarget!!, EMPTY_MOVE_REQUEST).also { (move, capture) ->
+                    if (move.valid == true) {
+                        gameState.revertMove(
+                            capturedPiece = capture,
+                            from = from,
+                            to = gameState.enPassantTarget!!,
+                            enPassantCapturePosition = threatPos
+                        )
+                        return true
+                    }
+                }
+            }
+        }
+
         for (entry in oppositePieces) {
             if (entry.key[1] == 'k') continue
             val from = entry.value
             val piece = gameState.board[from]
-            piece.move(gameState, from, threatPos, EMPTY_MOVE_REQUEST).also { (move, capture) ->
+            val moveRequest = if (piece is Pawn && threatPos.y == piece.promotionRank) {
+                EMPTY_MOVE_REQUEST.copy(promotion = "${piece.color.toString().lowercase()}q")
+            } else {
+                EMPTY_MOVE_REQUEST
+            }
+            piece.move(gameState, from, threatPos, moveRequest).also { (move, capture) ->
                 if (move.valid == true) {
-                    gameState.board[from] = piece
-                    gameState.board[threatPos] = capture
+                    gameState.revertMove(
+                        capturedPiece = capture,
+                        from = from,
+                        to = threatPos,
+                        enPassantCapturePosition = null
+                    )
                     return true
                 }
             }
@@ -796,7 +822,8 @@ class GameState {
                 when {
                     castle != null -> {
                         wPieces.replace(movedPiecePair.first.id, movedPiecePair.second)
-                        wPieces.replace(board[castle.rookPosStart.toXY()].id, castle.rookPosEnd.toXY())
+                        // update rook. Here the rook already moved in the state
+                        wPieces.replace(board[castle.rookPosEnd.toXY()].id, castle.rookPosEnd.toXY())
                     }
 
                     promotionPair.first != null -> {
