@@ -14,9 +14,9 @@ data class Move(
     val squareFrom: String,
     val squareTo: String,
     val gameId: String,
-    val valid: Boolean? = null,
+    val valid: Boolean = false,
     val position: String? = null,
-    val enPassantCapture: String? = null,
+    val enPassantCapturePos: String? = null,
     val promotion: String? = null,
     val castle: Castle? = null,
     val end: String? = null

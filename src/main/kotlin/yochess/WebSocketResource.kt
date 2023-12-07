@@ -4,7 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.*
 import jakarta.websocket.server.PathParam
 import jakarta.websocket.server.ServerEndpoint
-import org.jboss.logging.Logger
+import mu.KotlinLogging
 import yochess.dtos.InitEnDecoder
 import yochess.dtos.MessageEnDecoder
 import yochess.dtos.Move
@@ -22,7 +22,7 @@ class WebSocketResource(
     private val moveService: MoveService,
     private val gamesService: GamesManager
 ) {
-    private val logger: Logger = Logger.getLogger(this::class.java)
+    private val logger = KotlinLogging.logger {}
 
     @OnOpen
     fun onOpen(

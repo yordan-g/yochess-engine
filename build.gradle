@@ -23,6 +23,8 @@ dependencies {
 
     implementation 'io.quarkus:quarkus-config-yaml'
 
+    implementation 'io.github.microutils:kotlin-logging:3.0.5'
+
     testImplementation 'io.quarkus:quarkus-junit5'
     testImplementation 'io.rest-assured:rest-assured'
     testImplementation 'io.kotest:kotest-assertions-core:5.8.0'

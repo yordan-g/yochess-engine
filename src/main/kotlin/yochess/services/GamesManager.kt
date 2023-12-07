@@ -3,6 +3,7 @@ package yochess.services
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.Session
 import jakarta.ws.rs.NotFoundException
+import mu.KotlinLogging
 import org.jboss.logging.Logger
 import yochess.dtos.InitMessage
 import yochess.dtos.Move
@@ -18,7 +19,7 @@ interface GamesManager {
 
 @ApplicationScoped
 class DefaultGamesService : GamesManager {
-    private val logger: Logger = Logger.getLogger(this::class.java)
+    private val logger = KotlinLogging.logger {}
     private val waitingPlayers: ConcurrentLinkedQueue<Session> = ConcurrentLinkedQueue()
     private val activeGames: MutableMap<String, Game> = ConcurrentHashMap()
 
@@ -49,7 +50,7 @@ class DefaultGamesService : GamesManager {
     }
 
     override fun broadcastMove(moveResult: Move) {
-        logger.debug("Message Received: $moveResult, valid: ${moveResult.valid}")
+        logger.debug { "Message Received: $moveResult, valid: ${moveResult.valid}" }
 
         activeGames[moveResult.gameId]?.let {
             it.player1.asyncRemote.sendObject(moveResult)
