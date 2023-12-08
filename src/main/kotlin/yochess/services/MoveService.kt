@@ -148,7 +148,7 @@ class Pawn(override val color: Color, override val id: String) : Piece {
             .isTheKingSafeAfterPieceMoved(gameState)
             .also { isSafe ->
                 if (!isSafe) gameState.revertMove(capturedPiece, from, to, enPassantCapturePosition, pawnBeforePromotion)
-                moveResult = moveRequest.copy(valid = isSafe, enPassantCapturePos = enPassantCapturePosition?.toFileRank() ?: null)
+                moveResult = moveRequest.copy(valid = isSafe, enPassantCapturePos = enPassantCapturePosition?.toFileRank())
             }
 
         return moveResult to capturedPiece
@@ -158,13 +158,13 @@ class Pawn(override val color: Color, override val id: String) : Piece {
         if (promotion == null || promotion.length != 2) throw ChessLogicException("Error: Piece: $promotion is not a valid chess notation!")
 
         val char = promotion[1].lowercase().takeIf { it in setOf("q", "r", "n", "b") } ?: throw ChessLogicException("Trying to promote invalid character")
-        val activePieces = gameState.getPieces(color)
-        val promotionId = activePieces
+
+        val promotionId = gameState.getPieces(color)
             .filter { it.key[1].toString() == char }
             .takeIf { it.isNotEmpty() }
             ?.map { it.key[2].digitToIntOrNull() ?: 0 }
             ?.maxOf { it }
-            ?.let { "${this.cLow()}" + char + it.plus(1) } ?: this.cLow() + char + "1"
+            ?.let { this.cLow() + char + it.plus(1) } ?: (this.cLow() + char + "1")
 
         return when (char) {
             "q" -> Queen(color, promotionId)
@@ -806,20 +806,15 @@ object EM : Piece {
     override fun generateMoves(currentPos: XY): List<XY> = throw UnsupportedOperationException("No piece, can't generate moves!")
 }
 
-// piece:from:to:captured
-// "wp:e2:e4:bq"
-data class MoveLog(
-    var w: String,
-    var b: String? = null
-)
+enum class Color { W, B }
 
 class GameState {
     val board: Array<Array<Piece>> = initBoard()
     var turn: Color = Color.W
     var enPassantTarget: XY? = null
 
-    private var positionWK: XY = XY(3, 0)
-    private var positionBK: XY = XY(3, 7)
+    private var posWK: XY = XY(3, 0)
+    private var posBK: XY = XY(3, 7)
 
     val wPieces = linkedMapOf(
         WP1.id to XY(0, 1), WP2.id to XY(1, 1), WP3.id to XY(2, 1), WP4.id to XY(3, 1),
@@ -891,7 +886,7 @@ class GameState {
         }
     }
 
-    // "wp:e2:e4:bq"
+    /** "wp:e2:e4:bq" */
     fun logMove(moveRequest: Move, capture: String) = when (turn) {
         Color.B -> "${moveRequest.piece}:${moveRequest.squareFrom}:${moveRequest.squareTo}:$capture"
             .also { history.last.b = it }
@@ -912,9 +907,9 @@ class GameState {
         }
     }
 
-    fun setKingPosition(color: Color, to: XY) = when (color) {
-        Color.W -> positionWK = to
-        Color.B -> positionBK = to
+    private fun setKingPosition(color: Color, to: XY) = when (color) {
+        Color.W -> posWK = to
+        Color.B -> posBK = to
     }
 
     fun getKing(color: Color): King = when (val piece = board[getKingPosition(color)]) {
@@ -923,12 +918,12 @@ class GameState {
     }
 
     fun getKingPosition(color: Color): XY = when (color) {
-        Color.W -> positionWK
-        Color.B -> positionBK
+        Color.W -> posWK
+        Color.B -> posBK
     }
 
     /** Returns the captured piece or EM */
-    fun makeMove(from: XY, to: XY): Piece {
+    private fun makeMove(from: XY, to: XY): Piece {
         val capturedPiece = this.board[to]
         this.board[to] = this.board[from]
         this.board[from] = EM
@@ -1007,13 +1002,16 @@ class GameState {
         }
     }
 
-    fun simulateMoveRequest(piece: Piece, moveTo: XY): Move =
-        when {
-            piece is Pawn && moveTo.y == piece.promotionRank ->
-                EMPTY_MOVE_REQUEST.copy(promotion = "${piece.color.toString().lowercase()}q")
+    fun simulateMoveRequest(piece: Piece, moveTo: XY): Move = when {
+        piece is Pawn && moveTo.y == piece.promotionRank ->
+            EMPTY_MOVE_REQUEST.copy(promotion = "${piece.color.toString().lowercase()}q")
 
-            else -> EMPTY_MOVE_REQUEST
-        }
+        else -> EMPTY_MOVE_REQUEST
+    }
+
+    private fun initBoard() = STARTING_BOARD.map { row ->
+        row.map { it.clone() }.toTypedArray()
+    }.toTypedArray()
 
     companion object {
         val WP1 = Pawn(Color.W, id = "wp1")
@@ -1049,9 +1047,9 @@ class GameState {
         val BB2 = Bishop(Color.B, id = "bb2")
         val BQ1 = Queen(Color.B, id = "bq1")
         val BK1 = King(Color.B, id = "bk1")
-        val EM0 = EM
+        private val EM0 = EM
 
-        val STARTING_BOARD: Array<Array<Piece>> =
+        private val STARTING_BOARD: Array<Array<Piece>> =
             arrayOf(
                 //     (0  , 1  , 2  , 3  , 4  , 5  , 6  , 7  ),
                 //     (h  , g  , f  , e  , d  , c  , b  , a  ),
@@ -1066,10 +1064,6 @@ class GameState {
                 //     (h  , g  , f  , e  , d  , c  , b  , a  ),
                 //     (0  , 1  , 2  , 3  , 4  , 5  , 6  , 7  ),
             )
-
-        private fun initBoard() = STARTING_BOARD.map { row ->
-            row.map { it.clone() }.toTypedArray()
-        }.toTypedArray()
 
         val DIRECTIONS = listOf(
             XY(0, -1),   // North
@@ -1121,7 +1115,12 @@ fun Array<Array<Piece>>.print(): String {
 fun yellow(text: String): String = "\u001B[33m$text\u001B[0m"
 fun blue(text: String): String = "\u001B[34m$text\u001B[0m"
 
-enum class Color { W, B }
+/** piece:from:to:captured
+ * "wp:e2:e4:bq" */
+data class MoveLog(
+    var w: String,
+    var b: String? = null
+)
 
 data class XY(val x: Int, val y: Int) {
     companion object {
