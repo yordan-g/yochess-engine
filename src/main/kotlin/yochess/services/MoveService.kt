@@ -9,7 +9,6 @@ import yochess.services.GameState.Companion.EMPTY_MOVE_REQUEST
 import yochess.services.XY.Companion.idxToFile
 import yochess.services.XY.Companion.idxToRank
 import java.util.*
-import kotlin.IllegalArgumentException
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -156,9 +155,9 @@ class Pawn(override val color: Color, override val id: String) : Piece {
     }
 
     private fun promotePawn(promotion: String?, gameState: GameState): Piece {
-        if (promotion == null || promotion.length != 2) throw IllegalArgumentException("Error: Piece: $promotion is not a valid chess notation!")
+        if (promotion == null || promotion.length != 2) throw ChessLogicException("Error: Piece: $promotion is not a valid chess notation!")
 
-        val char = promotion[1].lowercase().takeIf { it in setOf("q", "r", "n", "b") } ?: throw IllegalArgumentException("Trying to promote invalid character")
+        val char = promotion[1].lowercase().takeIf { it in setOf("q", "r", "n", "b") } ?: throw ChessLogicException("Trying to promote invalid character")
         val activePieces = gameState.getPieces(color)
         val promotionId = activePieces
             .filter { it.key[1].toString() == char }
@@ -172,7 +171,7 @@ class Pawn(override val color: Color, override val id: String) : Piece {
             "r" -> Rook(color, promotionId).apply { hasMoved = true }
             "n" -> Knight(color, promotionId)
             "b" -> Bishop(color, promotionId)
-            else -> throw IllegalArgumentException("Error: Piece: $char is not a valid chess notation!")
+            else -> throw ChessLogicException("Error: Piece: $char is not a valid chess notation!")
         }
     }
 
@@ -187,9 +186,7 @@ class Pawn(override val color: Color, override val id: String) : Piece {
 
     override fun clone() = Pawn(color, id)
     override fun signature(): String = if (color == Color.W) "WP" else "BP"
-    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean {
-        return false
-    }
+    override fun isValidMove(board: Array<Array<Piece>>, from: XY, to: XY): Boolean = throw ChessLogicException("Trying isValidMove on a Pawn. This is not yet implemented!")
 }
 
 class Queen(override val color: Color, override val id: String) : Piece {
@@ -257,7 +254,6 @@ class King(override val color: Color, override val id: String) : Piece {
             if (!isValidSquare(newPos)) continue
             if (!isValidMove(gameState.board, current, newPos)) continue
 
-            // todo: Do I need to actually use the kingPosition state here?
             if (!isInCheck(gameState, newPos)) {
                 return true
             }
@@ -538,7 +534,7 @@ class King(override val color: Color, override val id: String) : Piece {
 
                 if (!isValidSquare(moveTo)) break
                 val piece = gameState.board[moveTo]
-                // todo check for pawns giving check?
+                // todo: check for pawns giving check?
                 if (isPinningPiece(piece, kingPosition, moveTo)) {
                     givingCheck.add(moveTo)
                     inCheck = true
@@ -596,7 +592,6 @@ class King(override val color: Color, override val id: String) : Piece {
         }
 
         // Checking for the enemy king
-        // todo is this accurate?
         for (dir in DIRECTIONS) {
             val checkPos = kingPosition + dir
             if (isValidSquare(checkPos)) {
@@ -924,7 +919,7 @@ class GameState {
 
     fun getKing(color: Color): King = when (val piece = board[getKingPosition(color)]) {
         is King -> piece
-        else -> throw IllegalArgumentException("Board state error, there is no King at position ${getKingPosition(color)}")
+        else -> throw ChessLogicException("Board state error, there is no King at position ${getKingPosition(color)}")
     }
 
     fun getKingPosition(color: Color): XY = when (color) {
@@ -1180,12 +1175,11 @@ fun XY.generateDiagonalMoves(): List<XY> {
 }
 
 fun XY.toFileRank(): String = (idxToFile[x] + idxToRank[y]).also {
-    if (it.length > 2) throw IllegalArgumentException("Can't convert to File:Rank from the given indexes: $x:$y")
+    if (it.length > 2) throw ChessLogicException("Can't convert to File:Rank from the given indexes: $x:$y")
 }
 
 fun String.toXY(): XY {
-    // todo Check if the destination square is within the board's boundaries
-    //    if (to.x !in 0..7 || to.y !in 0..7) return false
+    // todo: Could do a safety check if the destination square is within the board's boundaries.
     return this.map {
         when (it) {
             'h' -> 0
@@ -1205,9 +1199,11 @@ fun String.toXY(): XY {
             '6' -> 5
             '7' -> 6
             '8' -> 7
-            else -> throw IllegalArgumentException("Char $it isn't a valid chess square notation!")
+            else -> throw ChessLogicException("Char $it isn't a valid chess square notation!")
         }
     }.let {
         XY(x = it.first(), y = it.last())
     }
 }
+
+data class ChessLogicException(override val message: String) : RuntimeException()
