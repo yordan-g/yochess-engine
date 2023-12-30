@@ -3,4 +3,4 @@ quarkus:
     level: INFO
     category:
       "io.quarkus":
-        level: ERROR
+        level: INFO

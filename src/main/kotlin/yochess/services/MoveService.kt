@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped
 import mu.KotlinLogging
 import yochess.dtos.Castle
 import yochess.dtos.Move
+import yochess.dtos.Time
 import yochess.services.GameState.Companion.DIRECTIONS
 import yochess.services.GameState.Companion.EMPTY_MOVE_REQUEST
 import yochess.services.XY.Companion.idxToFile
@@ -23,7 +24,10 @@ class DefaultMoveService : MoveService {
 
     override fun processMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
         if (gameState.turn != gameState.board[from].color) {
-            return moveRequest.copy(valid = false)
+            return moveRequest.apply {
+                whiteCaptures = gameState.wCaptures
+                blackCaptures = gameState.bCaptures
+            }
         }
 
         return gameState
@@ -49,12 +53,18 @@ class DefaultMoveService : MoveService {
                             inStalemate -> moveResult.copy(end = "Stalemate")
                             else -> {
 //                                logger.debug { "End move: \n${gameState.board.print()}" }
-                                gameState.changeTurn()
-                                moveResult
+
+                                moveResult.apply {
+                                    timeLeft = gameState.changeTurn()
+                                    turn = gameState.turn.name.lowercase()
+                                }
                             }
                         }
                     }
                 }
+            }.also {
+                it.whiteCaptures = gameState.wCaptures
+                it.blackCaptures = gameState.bCaptures
             }
     }
 }
@@ -808,8 +818,30 @@ object EM : Piece {
 
 enum class Color { W, B }
 
+class Clock {
+    var white = 5L
+    var black = 5L
+    var startTime: Long = System.currentTimeMillis()
+
+    fun endPlayerTurn(turn: Color): Time {
+        val currentTime = System.currentTimeMillis()
+        val timeSpent = (currentTime - startTime) / 1000 // Convert to seconds
+
+        when (turn) {
+            Color.W -> white -= timeSpent
+            else -> black -= timeSpent
+        }
+
+        // Switch turns and update startTime for the next player
+        startTime = System.currentTimeMillis()
+
+        return Time(white, black)
+    }
+}
+
 class GameState {
     val board: Array<Array<Piece>> = initBoard()
+    val clock = Clock()
     var turn: Color = Color.W
     var enPassantTarget: XY? = null
 
@@ -828,8 +860,8 @@ class GameState {
         BR1.id to XY(0, 7), BN1.id to XY(1, 7), BB1.id to XY(2, 7), BK1.id to XY(3, 7),
         BQ1.id to XY(4, 7), BB2.id to XY(5, 7), BN2.id to XY(6, 7), BR2.id to XY(7, 7)
     )
-    private val wCaptures = LinkedList<String>()
-    private val bCaptures = LinkedList<String>()
+    val wCaptures = LinkedList<String>()
+    val bCaptures = LinkedList<String>()
     private val history = LinkedList<MoveLog>()
 
     fun getOpponentColor(): Color = if (turn == Color.W) Color.B else Color.W
@@ -857,7 +889,7 @@ class GameState {
                     else -> wPieces.replace(movedPiecePair.first.id, movedPiecePair.second)
                 }
                 if (capturedPiece != EM) {
-                    wCaptures.add(capturedPiece.id)
+                    wCaptures.add(capturedPiece.id.dropLast(1))
                     bPieces.remove(capturedPiece.id)
                 }
             }
@@ -879,7 +911,7 @@ class GameState {
                     }
                 }
                 if (capturedPiece != EM) {
-                    bCaptures.add(capturedPiece.id)
+                    bCaptures.add(capturedPiece.id.dropLast(1))
                     wPieces.remove(capturedPiece.id)
                 }
             }
@@ -895,16 +927,12 @@ class GameState {
             .also { history.add(MoveLog(it)) }
     }
 
-    fun changeTurn(): Color = when (turn) {
-        Color.W -> {
-            turn = Color.B
-            turn
-        }
+    fun changeTurn(): Time {
+        val timeLeft = clock.endPlayerTurn(turn)
 
-        Color.B -> {
-            turn = Color.W
-            turn
-        }
+        turn = if (turn == Color.W) Color.B else Color.W
+
+        return timeLeft
     }
 
     private fun setKingPosition(color: Color, to: XY) = when (color) {
