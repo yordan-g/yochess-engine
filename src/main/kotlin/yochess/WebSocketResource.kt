@@ -5,7 +5,7 @@ import jakarta.websocket.*
 import jakarta.websocket.server.PathParam
 import jakarta.websocket.server.ServerEndpoint
 import mu.KotlinLogging
-import yochess.dtos.InitEnDecoder
+import yochess.dtos.Message
 import yochess.dtos.MessageEnDecoder
 import yochess.dtos.Move
 import yochess.services.GamesManager
@@ -15,8 +15,8 @@ import yochess.services.toXY
 @ApplicationScoped
 @ServerEndpoint(
     "/chess/{username}/{gameId}",
-    encoders = [MessageEnDecoder::class, InitEnDecoder::class],
-    decoders = [MessageEnDecoder::class, InitEnDecoder::class]
+    encoders = [MessageEnDecoder::class],
+    decoders = [MessageEnDecoder::class]
 )
 class WebSocketResource(
     private val moveService: MoveService,
@@ -56,17 +56,19 @@ class WebSocketResource(
 
     @OnMessage
     fun onMessage(
-        moveRequest: Move,
+        moveRequest: Message,
         @PathParam("username") username: String
     ) {
-        val moveResult = moveService.processMove(
-            gameState = gamesService.getGame(moveRequest.gameId).state,
-            from = moveRequest.squareFrom.toXY(),
-            to = moveRequest.squareTo.toXY(),
-            moveRequest = moveRequest
-        )
-        gamesService.broadcastMove(
-            moveResult
-        )
+        if (moveRequest is Move) {
+            val moveResult = moveService.processMove(
+                gameState = gamesService.getGame(moveRequest.gameId).state,
+                from = moveRequest.squareFrom.toXY(),
+                to = moveRequest.squareTo.toXY(),
+                moveRequest = moveRequest
+            )
+            gamesService.broadcastMove(
+                moveResult
+            )
+        }
     }
 }

@@ -1,16 +1,30 @@
 package yochess.dtos
 
+import com.fasterxml.jackson.annotation.JsonSubTypes
+import com.fasterxml.jackson.annotation.JsonTypeInfo
 import yochess.dtos.Time.Companion.DEFAULT_TIME_LEFT
 import yochess.services.WebSocketPhase
 
-data class InitMessage(
+@JsonTypeInfo(
+    use = JsonTypeInfo.Id.NAME,
+    include = JsonTypeInfo.As.PROPERTY,
+    property = "kind"
+)
+@JsonSubTypes(
+    JsonSubTypes.Type(value = Init::class, name = "INIT"),
+    JsonSubTypes.Type(value = Move::class, name = "MOVE")
+)
+sealed class Message
+
+data class Init(
+    val kind: String = "INIT",
     val type: WebSocketPhase = WebSocketPhase.INIT,
     val color: String? = null,
     val gameId: String
-)
+) : Message()
 
 data class Move(
-    val type: String = "MOVE",
+    val kind: String = "MOVE",
     val piece: String,
     val squareFrom: String,
     val squareTo: String,
@@ -25,7 +39,7 @@ data class Move(
     var blackCaptures: List<String> = listOf(),
     var timeLeft: Time = DEFAULT_TIME_LEFT,
     var turn: String = "w"
-)
+) : Message()
 
 data class Castle(
     val rook: String,

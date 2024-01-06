@@ -1105,7 +1105,7 @@ class GameState {
         )
 
         val EMPTY_MOVE_REQUEST = Move(
-            type = "MOVE",
+            kind = "MOVE",
             piece = "",
             squareFrom = "",
             squareTo = "",

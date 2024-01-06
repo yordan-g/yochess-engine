@@ -4,8 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.Session
 import jakarta.ws.rs.NotFoundException
 import mu.KotlinLogging
-import org.jboss.logging.Logger
-import yochess.dtos.InitMessage
+import yochess.dtos.Init
 import yochess.dtos.Move
 import java.util.*
 import java.util.concurrent.*
@@ -26,13 +25,13 @@ class DefaultGamesService : GamesManager {
     override fun addPlayerToGame(player: Session): String = when (val matchedPlayer = waitingPlayers.poll()) {
         null -> "Waiting for game".also {
             waitingPlayers.offer(player)
-            player.asyncRemote.sendObject(InitMessage(gameId = it))
+            player.asyncRemote.sendObject(Init(gameId = it))
         }
 
         else -> UUID.randomUUID().toString().also {
             activeGames[it] = Game(player, matchedPlayer)
-            matchedPlayer.asyncRemote.sendObject(InitMessage(type = WebSocketPhase.START, color = "w", gameId = it))
-            player.asyncRemote.sendObject(InitMessage(type = WebSocketPhase.START, color = "b", gameId = it))
+            matchedPlayer.asyncRemote.sendObject(Init(type = WebSocketPhase.START, color = "w", gameId = it))
+            player.asyncRemote.sendObject(Init(type = WebSocketPhase.START, color = "b", gameId = it))
         }
     }.also {
         logger.info("Player connected to game: $it")

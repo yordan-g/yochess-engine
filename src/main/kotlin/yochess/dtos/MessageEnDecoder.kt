@@ -15,30 +15,16 @@ val objectMapper: ObjectMapper = ObjectMapper()
     .setDefaultPropertyInclusion(JsonInclude.Include.NON_NULL)
     .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
 
-class MessageEnDecoder : Encoder.TextStream<Move>, Decoder.TextStream<Move> {
+class MessageEnDecoder : Encoder.TextStream<Message>, Decoder.TextStream<Message> {
     override fun init(config: EndpointConfig) {}
 
     override fun destroy() {}
 
-    override fun encode(move: Move, writer: Writer) {
+    override fun encode(move: Message, writer: Writer) {
         writer.append(objectMapper.writeValueAsString(move))
     }
 
-    override fun decode(reader: Reader): Move {
-        return objectMapper.readValue(reader, Move::class.java)
-    }
-}
-
-class InitEnDecoder : Encoder.TextStream<InitMessage>, Decoder.TextStream<InitMessage> {
-    override fun init(config: EndpointConfig) {}
-
-    override fun destroy() {}
-
-    override fun encode(initMessage: InitMessage, writer: Writer) {
-        writer.append(objectMapper.writeValueAsString(initMessage))
-    }
-
-    override fun decode(reader: Reader): InitMessage {
-        return objectMapper.readValue(reader, InitMessage::class.java)
+    override fun decode(reader: Reader): Message {
+        return objectMapper.readValue(reader, Message::class.java)
     }
 }
