@@ -5,16 +5,14 @@ import jakarta.websocket.*
 import jakarta.websocket.server.PathParam
 import jakarta.websocket.server.ServerEndpoint
 import mu.KotlinLogging
-import yochess.dtos.Message
-import yochess.dtos.MessageEnDecoder
-import yochess.dtos.Move
+import yochess.dtos.*
 import yochess.services.GamesManager
 import yochess.services.MoveService
 import yochess.services.toXY
 
 @ApplicationScoped
 @ServerEndpoint(
-    "/chess/{username}/{gameId}",
+    "/chess/{userId}",
     encoders = [MessageEnDecoder::class],
     decoders = [MessageEnDecoder::class]
 )
@@ -27,48 +25,86 @@ class WebSocketResource(
     @OnOpen
     fun onOpen(
         session: Session,
-        @PathParam("username") username: String,
-        @PathParam("gameId") existingGameId: String?
+        @PathParam("userId") userId: String
     ) {
-        gamesService.addPlayerToGame(session)
+        val queryParams = session.requestParameterMap
+        val rematchGameId = queryParams["rematchGameId"]?.firstOrNull()
+        logger.info { "rematchGameId -- $rematchGameId" }
+
+        when {
+            rematchGameId != null -> {
+                gamesService.connectToRematchGame(rematchGameId, userId, session)
+            }
+            else -> gamesService.connectToRandomGame(userId, session)
+        }
     }
 
     @OnClose
     fun onClose(
         session: Session,
-        @PathParam("username") username: String,
-        @PathParam("gameId") gameId: String
+        @PathParam("userId") userId: String
     ) {
-        gamesService.closeGame(username, session)
+        logger.info { "Session closed --------------" }
     }
 
     @OnError
     fun onError(
         session: Session,
-        @PathParam("username") username: String,
-        @PathParam("gameId") gameId: String,
+        @PathParam("userId") userId: String,
         throwable: Throwable
     ) {
-        logger.error("Error Received ... $throwable")
+        // if error use "session"
+        // 1. send a message to the client saying what happened
+        //      may search game by session so that we can notify both players
+        // 2. session.close()
 
-        gamesService.closeGame(gameId, session)
+        logger.error { "Error Received ... $throwable" }
     }
 
     @OnMessage
     fun onMessage(
-        moveRequest: Message,
-        @PathParam("username") username: String
+        message: Message,
+        @PathParam("userId") userId: String
     ) {
-        if (moveRequest is Move) {
-            val moveResult = moveService.processMove(
-                gameState = gamesService.getGame(moveRequest.gameId).state,
-                from = moveRequest.squareFrom.toXY(),
-                to = moveRequest.squareTo.toXY(),
-                moveRequest = moveRequest
-            )
-            gamesService.broadcastMove(
-                moveResult
-            )
+        when (message) {
+            is Move -> {
+                val moveResult = moveService.processMove(
+                    gameState = gamesService.getGame(message.gameId).state,
+                    from = message.squareFrom.toXY(),
+                    to = message.squareTo.toXY(),
+                    moveRequest = message
+                )
+                gamesService.broadcast(moveResult)
+            }
+
+            is End -> {
+                when {
+                    message.leftGame == true -> {
+                        gamesService.broadcast(message)
+                        gamesService.closeGame(message.gameId)
+                    }
+
+                    message.close == true -> {
+                        gamesService.broadcast(message)
+                        gamesService.closeGame(message.gameId)
+                    }
+
+                    message.rematch == true -> {
+                        logger.info { "Received rematch message ---" }
+
+                        gamesService.offerRematch(message.gameId, userId)
+                    }
+
+                    else -> gamesService.broadcast(message)
+                }
+            }
+
+            is Init -> {}
+            is ChangeName -> {
+                logger.info { "Received ChangeName message for userId: $userId, message: $message" }
+
+                gamesService.changePlayerName(userId, message)
+            }
         }
     }
 }

@@ -4,68 +4,181 @@ import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.Session
 import jakarta.ws.rs.NotFoundException
 import mu.KotlinLogging
+import yochess.dtos.ChangeName
+import yochess.dtos.End
 import yochess.dtos.Init
 import yochess.dtos.Move
 import java.util.*
 import java.util.concurrent.*
 
 interface GamesManager {
-    fun addPlayerToGame(player: Session): String
-    fun broadcastMove(move: Move)
-    fun closeGame(id: String, session: Session)
+    fun connectToRandomGame(userId: String, session: Session)
+    fun connectToRematchGame(rematchGameId: String, userId: String, session: Session)
+    fun broadcast(moveResult: Move)
+    fun broadcast(endMessage: End)
+    fun closeGame(id: String)
     fun getGame(gameId: String): Game
+    fun offerRematch(gameId: String, userId: String)
+    fun changePlayerName(userId: String, changeNameMessage: ChangeName)
 }
 
 @ApplicationScoped
 class DefaultGamesService : GamesManager {
     private val logger = KotlinLogging.logger {}
-    private val waitingPlayers: ConcurrentLinkedQueue<Session> = ConcurrentLinkedQueue()
-    private val activeGames: MutableMap<String, Game> = ConcurrentHashMap()
+    private val waitingPlayers: ConcurrentLinkedQueue<Player> = ConcurrentLinkedQueue()
+    private val activeGames: ConcurrentHashMap<String, Game> = ConcurrentHashMap()
 
-    override fun addPlayerToGame(player: Session): String = when (val matchedPlayer = waitingPlayers.poll()) {
-        null -> "Waiting for game".also {
-            waitingPlayers.offer(player)
-            player.asyncRemote.sendObject(Init(gameId = it))
-        }
+    override fun connectToRandomGame(userId: String, session: Session) {
+        logger.info { "Start | User: $userId connecting to a random game." }
 
-        else -> UUID.randomUUID().toString().also {
-            activeGames[it] = Game(player, matchedPlayer)
-            matchedPlayer.asyncRemote.sendObject(Init(type = WebSocketPhase.START, color = "w", gameId = it))
-            player.asyncRemote.sendObject(Init(type = WebSocketPhase.START, color = "b", gameId = it))
+        when (val matchedPlayer = waitingPlayers.poll()) {
+            null -> "Waiting for game".also {
+                val player1 = Player(userId = userId, session = session, color = Color.W)
+                waitingPlayers.offer(player1)
+                player1.session?.asyncRemote?.sendObject(Init(gameId = it))
+            }
+
+            else -> UUID.randomUUID().toString().also { newGameId ->
+                val player2 = Player(userId = userId, session = session, color = Color.B)
+                activeGames[newGameId] = Game(player2, matchedPlayer)
+                matchedPlayer.session?.asyncRemote?.sendObject(Init(type = GamePhase.START, color = matchedPlayer.color.lowercase(), gameId = newGameId))
+                player2.session?.asyncRemote?.sendObject(Init(type = GamePhase.START, color = player2.color.lowercase(), gameId = newGameId))
+            }
+        }.also {
+            logger.info { "End | User: $userId connected to game: $it" }
+            logger.info { "waitingPlayers: ${waitingPlayers.size}" }
+            logger.info { "activeGames: ${activeGames.size}" }
         }
-    }.also {
-        logger.info("Player connected to game: $it")
     }
 
-    override fun closeGame(id: String, session: Session) {
+    override fun connectToRematchGame(rematchGameId: String, userId: String, session: Session) {
+        logger.info { "Start | Adding User: $userId to a Rematch game: $rematchGameId." }
+
+        val game = activeGames[rematchGameId]
+        when {
+            game == null -> {
+                logger.error { "End | Tried to add player a rematch but the game is not found in activeGames!" }
+            }
+
+            game.player1.session == null -> {
+                game.player1.userId = userId
+                game.player1.session = session
+                game.player1.session?.asyncRemote?.sendObject(Init(gameId = rematchGameId))
+            }
+
+            game.player2.session == null -> {
+                game.player2.userId = userId
+                game.player2.session = session
+                game.player1.session?.asyncRemote?.sendObject(Init(type = GamePhase.START, color = game.player1.color.lowercase(), gameId = rematchGameId))
+                game.player2.session?.asyncRemote?.sendObject(Init(type = GamePhase.START, color = game.player2.color.lowercase(), gameId = rematchGameId))
+            }
+
+            else -> logger.error { "End | State problem, both players have open sessions, the game should have started!" }
+        }
+    }
+
+    override fun closeGame(id: String) {
+        logger.info("Start | Closing Connection for gameId: $id")
         // could do a security check if the session matches a session in the active game that needs to be closed
-        activeGames.remove(id)
-        waitingPlayers.remove(session)
-        logger.info("Closing Connection ... gameId: $id")
+        val removedGame = activeGames.remove(id)
+        waitingPlayers.remove(removedGame?.player1)
+        waitingPlayers.remove(removedGame?.player2)
+
+        if (removedGame?.player1?.session?.isOpen == true) {
+            removedGame?.player1?.session?.close()
+        }
+        if (removedGame?.player2?.session?.isOpen == true) {
+            removedGame?.player2?.session?.close()
+        }
+
+        activeGames.forEach { entry ->
+            logger.info("has key: ${entry.key}")
+        }
     }
 
-    override fun getGame(gameId: String): Game {
-        return activeGames[gameId] ?: throw NotFoundException("error")
+    override fun getGame(gameId: String): Game = activeGames[gameId] ?: throw NotFoundException("There is no active game: $gameId")
+
+    /** Puts a new Game object in the map so that connectToRematchGame() is able to put users in the Game.
+     *  Also switches the colors of players */
+    override fun offerRematch(gameId: String, userId: String) {
+        logger.info { "Start | Player: $userId is offering a rematch." }
+
+        val currentGame = activeGames[gameId]
+        when {
+            (currentGame == null || currentGame.player1 == null || currentGame.player2 == null) -> {
+                logger.error { "End | There is no such game or player!" }
+                return
+            }
+
+            currentGame.player1.userId == userId -> currentGame.player1.offeredRematch = true
+            currentGame.player2.userId == userId -> currentGame.player2.offeredRematch = true
+            else -> {
+                logger.error { " End | User: $userId, tried offering a rematch in Game: $gameId but he is not in this game! State error!" }
+                return
+            }
+        }
+
+        if (currentGame.player1.offeredRematch && currentGame.player2.offeredRematch) {
+            val rematchGameId = UUID.randomUUID().toString()
+            activeGames[rematchGameId] = Game(
+                player1 = Player(color = currentGame.player2.color),
+                player2 = Player(color = currentGame.player1.color),
+            )
+            currentGame.player1.session?.asyncRemote?.sendObject(End(gameId = gameId, rematchSuccess = true, rematchGameId = rematchGameId))
+            currentGame.player2.session?.asyncRemote?.sendObject(End(gameId = gameId, rematchSuccess = true, rematchGameId = rematchGameId))
+
+            logger.info { "End | Rematch accepted, starting a new game: $rematchGameId" }
+        }
     }
 
-    override fun broadcastMove(moveResult: Move) {
-        logger.debug { "Message Received: $moveResult, valid: ${moveResult.valid}" }
+    override fun changePlayerName(userId: String, changeNameMessage: ChangeName) {
+        // todo: Make custom ex and handle in OnError
+        val game = activeGames[changeNameMessage.gameId] ?: throw IllegalArgumentException("tbd")
+
+        when {
+            game.player1.userId == userId -> {
+                game.player1.username = changeNameMessage.name
+                game.player2.session?.asyncRemote?.sendObject(changeNameMessage)
+            }
+            game.player2.userId == userId -> {
+                game.player2.username = changeNameMessage.name
+                game.player1.session?.asyncRemote?.sendObject(changeNameMessage)
+            }
+        }
+    }
+
+    override fun broadcast(moveResult: Move) {
+        logger.debug { "Sending | $moveResult" }
 
         activeGames[moveResult.gameId]?.let {
-            it.player1.asyncRemote.sendObject(moveResult)
-            it.player2.asyncRemote.sendObject(moveResult)
+            it.player1?.session?.asyncRemote?.sendObject(moveResult)
+            it.player2?.session?.asyncRemote?.sendObject(moveResult)
+        }
+    }
+
+    override fun broadcast(endMessage: End) {
+        logger.info { "Sending | $endMessage" }
+
+        activeGames[endMessage.gameId]?.let {
+            it.player1?.session?.asyncRemote?.sendObject(endMessage)
+            it.player2?.session?.asyncRemote?.sendObject(endMessage)
         }
     }
 }
 
-enum class WebSocketPhase {
-    INIT,
-    START
-}
+enum class GamePhase { INIT, START }
 
 data class Game(
-    var player1: Session,
-    var player2: Session,
+    val player1: Player,
+    val player2: Player,
 ) {
     val state: GameState = GameState()
 }
+
+data class Player(
+    var session: Session? = null,
+    var userId: String? = null,
+    var username: String? = null,
+    var color: Color,
+    var offeredRematch: Boolean = false
+)

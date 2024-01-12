@@ -3,7 +3,7 @@ package yochess.dtos
 import com.fasterxml.jackson.annotation.JsonSubTypes
 import com.fasterxml.jackson.annotation.JsonTypeInfo
 import yochess.dtos.Time.Companion.DEFAULT_TIME_LEFT
-import yochess.services.WebSocketPhase
+import yochess.services.GamePhase
 
 @JsonTypeInfo(
     use = JsonTypeInfo.Id.NAME,
@@ -12,13 +12,15 @@ import yochess.services.WebSocketPhase
 )
 @JsonSubTypes(
     JsonSubTypes.Type(value = Init::class, name = "INIT"),
-    JsonSubTypes.Type(value = Move::class, name = "MOVE")
+    JsonSubTypes.Type(value = Move::class, name = "MOVE"),
+    JsonSubTypes.Type(value = End::class, name = "END"),
+    JsonSubTypes.Type(value = ChangeName::class, name = "CHANGE_NAME"),
 )
 sealed class Message
 
 data class Init(
     val kind: String = "INIT",
-    val type: WebSocketPhase = WebSocketPhase.INIT,
+    val type: GamePhase = GamePhase.INIT,
     val color: String? = null,
     val gameId: String
 ) : Message()
@@ -40,6 +42,24 @@ data class Move(
     var timeLeft: Time = DEFAULT_TIME_LEFT,
     var turn: String = "w"
 ) : Message()
+
+data class End(
+    val kind: String = "END",
+    val gameId: String,
+    val winner: String? = null,
+    val ended: Boolean? = null,
+    val leftGame: Boolean? = null,
+    val close: Boolean? = null,
+    val rematch: Boolean? = null,
+    val rematchSuccess: Boolean? = null,
+    val rematchGameId: String? = null,
+) : Message()
+
+data class ChangeName(
+    val kind: String =  "CHANGE_NAME",
+    val gameId: String,
+    val name: String
+): Message()
 
 data class Castle(
     val rook: String,

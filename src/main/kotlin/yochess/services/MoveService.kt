@@ -816,11 +816,18 @@ object EM : Piece {
     override fun generateMoves(currentPos: XY): List<XY> = throw UnsupportedOperationException("No piece, can't generate moves!")
 }
 
-enum class Color { W, B }
+enum class Color(val value: String) {
+    W("w"),
+    B("b");
+
+    fun lowercase(): String {
+        return value
+    }
+}
 
 class Clock {
-    var white = 5L
-    var black = 5L
+    var white = 500L
+    var black = 500L
     var startTime: Long = System.currentTimeMillis()
 
     fun endPlayerTurn(turn: Color): Time {
