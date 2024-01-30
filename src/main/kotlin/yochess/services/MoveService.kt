@@ -515,6 +515,20 @@ class King(override val color: Color, override val id: String) : Piece {
             }
         }
 
+        val knightMoves = listOf(
+            XY(1, 2), XY(2, 1), XY(-1, 2), XY(-2, 1),
+            XY(1, -2), XY(2, -1), XY(-1, -2), XY(-2, -1)
+        )
+        for (nMove in knightMoves) {
+            val knightPos = XY(kingPosition.x + nMove.x, kingPosition.y + nMove.y)
+            if (isValidSquare(knightPos)) {
+                val piece = gameState.board[knightPos]
+                if (piece is Knight && piece.color != this.color) {
+                    return false
+                }
+            }
+        }
+
         for (direction in DIRECTIONS) {
             var distance = 1
             while (true) {
