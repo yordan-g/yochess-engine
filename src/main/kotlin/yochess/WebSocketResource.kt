@@ -98,7 +98,7 @@ class WebSocketResource(
         @PathParam("userId") userId: String,
         throwable: Throwable
     ) {
-        logger.error { "Connection Issue | ... ${throwable.message}" }
+//        logger.error { "Connection Issue | ... ${throwable.message}" }
 
         when (throwable) {
             is GameNotFound -> {
@@ -109,6 +109,9 @@ class WebSocketResource(
             }
             is InvalidGameState -> {
                 // todo: determine if this causes issues for users
+            }
+            else -> {
+                session.close()
             }
         }
         // if error use "session"

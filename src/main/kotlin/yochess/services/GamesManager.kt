@@ -2,7 +2,6 @@ package yochess.services
 
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.Session
-import jakarta.ws.rs.NotFoundException
 import mu.KotlinLogging
 import yochess.dtos.ChangeName
 import yochess.dtos.End
@@ -20,7 +19,6 @@ interface GamesManager {
     fun getGame(gameId: String): Game
     fun offerRematch(gameId: String, userId: String)
     fun changePlayerName(userId: String, changeNameMessage: ChangeName)
-    fun removeGame(gameId: String)
 }
 
 data class GameNotFound(val gameId: String, override val message: String) : RuntimeException(message)
@@ -32,25 +30,21 @@ class DefaultGamesService : GamesManager {
     private val waitingPlayers: ConcurrentLinkedQueue<Player> = ConcurrentLinkedQueue()
     private val activeGames: ConcurrentHashMap<String, Game> = ConcurrentHashMap()
 
-    override fun removeGame(gameId: String) {
-        activeGames.remove(gameId)
-    }
-
     override fun connectToRandomGame(userId: String, session: Session) {
         logger.info { "Start | User: $userId connecting to a random game." }
 
         when (val matchedPlayer = waitingPlayers.poll()) {
             null -> "Waiting for game".also {
-                val player1 = Player(userId = userId, session = session, color = Color.W)
+                val player1 = Player(userId = userId, color = Color.W).apply { this.session = session }
                 waitingPlayers.offer(player1)
-                player1.session?.asyncRemote?.sendObject(Init(gameId = it))
+                player1.session.asyncRemote.sendObject(Init(gameId = it))
             }
 
             else -> UUID.randomUUID().toString().also { newGameId ->
-                val player2 = Player(userId = userId, session = session, color = Color.B)
+                val player2 = Player(userId = userId, color = Color.B).apply { this.session = session }
                 activeGames[newGameId] = Game(player2, matchedPlayer)
-                matchedPlayer.session?.asyncRemote?.sendObject(Init(type = GamePhase.START, color = matchedPlayer.color.lowercase(), gameId = newGameId))
-                player2.session?.asyncRemote?.sendObject(Init(type = GamePhase.START, color = player2.color.lowercase(), gameId = newGameId))
+                matchedPlayer.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = matchedPlayer.color.lowercase(), gameId = newGameId))
+                player2.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = player2.color.lowercase(), gameId = newGameId))
             }
         }.also {
             logger.info { "End | User: $userId connected to game: $it" }
@@ -64,17 +58,19 @@ class DefaultGamesService : GamesManager {
 
         val game = activeGames[rematchGameId] ?: throw GameNotFound(rematchGameId, "End | Tried to add player a rematch but the game is not found in activeGames!")
         when {
-            game.player1.session == null -> {
+            !game.player1.connectedToRematch -> {
+                game.player1.connectedToRematch = true
                 game.player1.userId = userId
                 game.player1.session = session
-                game.player1.session?.asyncRemote?.sendObject(Init(gameId = rematchGameId))
+                game.player1.session.asyncRemote.sendObject(Init(gameId = rematchGameId))
             }
 
-            game.player2.session == null -> {
+            !game.player2.connectedToRematch -> {
+                game.player2.connectedToRematch = true
                 game.player2.userId = userId
                 game.player2.session = session
-                game.player1.session?.asyncRemote?.sendObject(Init(type = GamePhase.START, color = game.player1.color.lowercase(), gameId = rematchGameId))
-                game.player2.session?.asyncRemote?.sendObject(Init(type = GamePhase.START, color = game.player2.color.lowercase(), gameId = rematchGameId))
+                game.player1.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = game.player1.color.lowercase(), gameId = rematchGameId))
+                game.player2.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = game.player2.color.lowercase(), gameId = rematchGameId))
             }
 
             else -> {
@@ -87,26 +83,25 @@ class DefaultGamesService : GamesManager {
 
     override fun closeGame(endMessage: End) {
         val gameId = endMessage.gameId
-        logger.info("Start | Closing Connection for gameId: ${gameId}")
+        logger.info("Start | Closing Connection for gameId: $gameId")
 
         broadcast(endMessage)
         // could do a security check if the session matches a session in the active game that needs to be closed
         val removedGame = activeGames.remove(gameId)
-            ?: throw GameNotFound(gameId, "Trying to close a game: $gameId but it's not found!").also {
-                logger.error { it.message }
-            }
+            ?: return
+
         waitingPlayers.remove(removedGame.player1)
         waitingPlayers.remove(removedGame.player2)
 
-        if (removedGame.player1.session?.isOpen == true) {
-            removedGame.player1.session?.close()
+        if (removedGame.player1.session.isOpen) {
+            removedGame.player1.session.close()
         }
-        if (removedGame.player2.session?.isOpen == true) {
-            removedGame.player2.session?.close()
+        if (removedGame.player2.session.isOpen) {
+            removedGame.player2.session.close()
         }
 
         activeGames.forEach { entry ->
-            logger.info("has key: ${entry.key}")
+            logger.info { "has key: ${entry.key}" }
         }
     }
 
@@ -115,20 +110,17 @@ class DefaultGamesService : GamesManager {
     /** Puts a new Game object in the map so that connectToRematchGame() is able to put users in the Game.
      *  Also switches the colors of players */
     override fun offerRematch(gameId: String, userId: String) {
-        logger.info { "Start | Player: $userId is offering a rematch." }
+        logger.info { "Start | User: $userId is offering a rematch." }
 
         val currentGame = activeGames[gameId]
-        when {
-            (currentGame == null || currentGame.player1 == null || currentGame.player2 == null) -> {
-                logger.error { "End | There is no such game or player!" }
-                return
+            ?: throw GameNotFound(gameId, "End | User offers a rematch but there is no game in activeGames!").also {
+                logger.error { it.message }
             }
-
+        when {
             currentGame.player1.userId == userId -> currentGame.player1.offeredRematch = true
             currentGame.player2.userId == userId -> currentGame.player2.offeredRematch = true
-            else -> {
-                logger.error { " End | User: $userId, tried offering a rematch in Game: $gameId but he is not in this game! State error!" }
-                return
+            else -> throw InvalidGameState("End | User: $userId, tried offering a rematch in Game: $gameId but he is not in this game! State error!").also {
+                logger.error { it.message }
             }
         }
 
@@ -138,8 +130,8 @@ class DefaultGamesService : GamesManager {
                 player1 = Player(color = currentGame.player2.color),
                 player2 = Player(color = currentGame.player1.color),
             )
-            currentGame.player1.session?.asyncRemote?.sendObject(End(gameId = gameId, rematchSuccess = true, rematchGameId = rematchGameId))
-            currentGame.player2.session?.asyncRemote?.sendObject(End(gameId = gameId, rematchSuccess = true, rematchGameId = rematchGameId))
+            currentGame.player1.session.asyncRemote.sendObject(End(gameId = gameId, rematchSuccess = true, rematchGameId = rematchGameId))
+            currentGame.player2.session.asyncRemote.sendObject(End(gameId = gameId, rematchSuccess = true, rematchGameId = rematchGameId))
 
             logger.info { "End | Rematch accepted, starting a new game: $rematchGameId" }
         }
@@ -152,12 +144,12 @@ class DefaultGamesService : GamesManager {
         when {
             game.player1.userId == userId -> {
                 game.player1.username = changeNameMessage.name
-                game.player2.session?.asyncRemote?.sendObject(changeNameMessage)
+                game.player2.session.asyncRemote.sendObject(changeNameMessage)
             }
 
             game.player2.userId == userId -> {
                 game.player2.username = changeNameMessage.name
-                game.player1.session?.asyncRemote?.sendObject(changeNameMessage)
+                game.player1.session.asyncRemote.sendObject(changeNameMessage)
             }
         }
     }
@@ -166,8 +158,8 @@ class DefaultGamesService : GamesManager {
         logger.debug { "Sending | $moveResult" }
 
         activeGames[moveResult.gameId]?.let {
-            it.player1?.session?.asyncRemote?.sendObject(moveResult)
-            it.player2?.session?.asyncRemote?.sendObject(moveResult)
+            it.player1.session.asyncRemote.sendObject(moveResult)
+            it.player2.session.asyncRemote.sendObject(moveResult)
         }
     }
 
@@ -175,8 +167,8 @@ class DefaultGamesService : GamesManager {
         logger.info { "Sending | $endMessage" }
 
         activeGames[endMessage.gameId]?.let {
-            it.player1?.session?.asyncRemote?.sendObject(endMessage)
-            it.player2?.session?.asyncRemote?.sendObject(endMessage)
+            it.player1.session.asyncRemote.sendObject(endMessage)
+            it.player2.session.asyncRemote.sendObject(endMessage)
         }
     }
 }
@@ -191,9 +183,12 @@ data class Game(
 }
 
 data class Player(
-    var session: Session? = null,
     var userId: String? = null,
     var username: String? = null,
     var color: Color,
-    var offeredRematch: Boolean = false
-)
+    var offeredRematch: Boolean = false,
+    var connectedToRematch: Boolean = false
+) {
+    lateinit var session: Session
+}
+
