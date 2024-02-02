@@ -6,9 +6,7 @@ import jakarta.websocket.server.PathParam
 import jakarta.websocket.server.ServerEndpoint
 import mu.KotlinLogging
 import yochess.dtos.*
-import yochess.services.GamesManager
-import yochess.services.MoveService
-import yochess.services.toXY
+import yochess.services.*
 
 @ApplicationScoped
 @ServerEndpoint(
@@ -35,7 +33,54 @@ class WebSocketResource(
             rematchGameId != null -> {
                 gamesService.connectToRematchGame(rematchGameId, userId, session)
             }
+
             else -> gamesService.connectToRandomGame(userId, session)
+        }
+    }
+
+    @OnMessage
+    fun onMessage(
+        message: Message,
+        @PathParam("userId") userId: String
+    ) {
+        when (message) {
+            is Init -> {}
+            is CommunicationError -> {}
+            is Move -> {
+                val moveResult = moveService.processMove(
+                    gameState = gamesService.getGame(message.gameId).state,
+                    from = message.squareFrom.toXY(),
+                    to = message.squareTo.toXY(),
+                    moveRequest = message
+                )
+                gamesService.broadcast(moveResult)
+            }
+
+            is End -> {
+                when {
+                    message.leftGame == true -> {
+                        gamesService.closeGame(message)
+                    }
+
+                    message.close == true -> {
+                        gamesService.closeGame(message)
+                    }
+
+                    message.rematch == true -> {
+                        logger.info { "Received rematch message ---" }
+
+                        gamesService.offerRematch(message.gameId, userId)
+                    }
+
+                    else -> gamesService.broadcast(message)
+                }
+            }
+
+            is ChangeName -> {
+                logger.info { "Received ChangeName message for userId: $userId, message: $message" }
+
+                gamesService.changePlayerName(userId, message)
+            }
         }
     }
 
@@ -53,58 +98,22 @@ class WebSocketResource(
         @PathParam("userId") userId: String,
         throwable: Throwable
     ) {
+        logger.error { "Connection Issue | ... ${throwable.message}" }
+
+        when (throwable) {
+            is GameNotFound -> {
+                session.asyncRemote.sendObject(
+                    CommunicationError(userMessage = "Your game has ended unexpectedly. You can report a problem here or try another game from the 'Play' button!")
+                )
+                session.close()
+            }
+            is InvalidGameState -> {
+                // todo: determine if this causes issues for users
+            }
+        }
         // if error use "session"
         // 1. send a message to the client saying what happened
         //      may search game by session so that we can notify both players
         // 2. session.close()
-
-        logger.error { "Error Received ... $throwable" }
-    }
-
-    @OnMessage
-    fun onMessage(
-        message: Message,
-        @PathParam("userId") userId: String
-    ) {
-        when (message) {
-            is Move -> {
-                val moveResult = moveService.processMove(
-                    gameState = gamesService.getGame(message.gameId).state,
-                    from = message.squareFrom.toXY(),
-                    to = message.squareTo.toXY(),
-                    moveRequest = message
-                )
-                gamesService.broadcast(moveResult)
-            }
-
-            is End -> {
-                when {
-                    message.leftGame == true -> {
-                        gamesService.broadcast(message)
-                        gamesService.closeGame(message.gameId)
-                    }
-
-                    message.close == true -> {
-                        gamesService.broadcast(message)
-                        gamesService.closeGame(message.gameId)
-                    }
-
-                    message.rematch == true -> {
-                        logger.info { "Received rematch message ---" }
-
-                        gamesService.offerRematch(message.gameId, userId)
-                    }
-
-                    else -> gamesService.broadcast(message)
-                }
-            }
-
-            is Init -> {}
-            is ChangeName -> {
-                logger.info { "Received ChangeName message for userId: $userId, message: $message" }
-
-                gamesService.changePlayerName(userId, message)
-            }
-        }
     }
 }

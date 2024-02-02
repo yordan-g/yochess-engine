@@ -16,17 +16,25 @@ interface GamesManager {
     fun connectToRematchGame(rematchGameId: String, userId: String, session: Session)
     fun broadcast(moveResult: Move)
     fun broadcast(endMessage: End)
-    fun closeGame(id: String)
+    fun closeGame(endMessage: End)
     fun getGame(gameId: String): Game
     fun offerRematch(gameId: String, userId: String)
     fun changePlayerName(userId: String, changeNameMessage: ChangeName)
+    fun removeGame(gameId: String)
 }
+
+data class GameNotFound(val gameId: String, override val message: String) : RuntimeException(message)
+data class InvalidGameState(override val message: String) : RuntimeException(message)
 
 @ApplicationScoped
 class DefaultGamesService : GamesManager {
     private val logger = KotlinLogging.logger {}
     private val waitingPlayers: ConcurrentLinkedQueue<Player> = ConcurrentLinkedQueue()
     private val activeGames: ConcurrentHashMap<String, Game> = ConcurrentHashMap()
+
+    override fun removeGame(gameId: String) {
+        activeGames.remove(gameId)
+    }
 
     override fun connectToRandomGame(userId: String, session: Session) {
         logger.info { "Start | User: $userId connecting to a random game." }
@@ -54,12 +62,8 @@ class DefaultGamesService : GamesManager {
     override fun connectToRematchGame(rematchGameId: String, userId: String, session: Session) {
         logger.info { "Start | Adding User: $userId to a Rematch game: $rematchGameId." }
 
-        val game = activeGames[rematchGameId]
+        val game = activeGames[rematchGameId] ?: throw GameNotFound(rematchGameId, "End | Tried to add player a rematch but the game is not found in activeGames!")
         when {
-            game == null -> {
-                logger.error { "End | Tried to add player a rematch but the game is not found in activeGames!" }
-            }
-
             game.player1.session == null -> {
                 game.player1.userId = userId
                 game.player1.session = session
@@ -73,22 +77,32 @@ class DefaultGamesService : GamesManager {
                 game.player2.session?.asyncRemote?.sendObject(Init(type = GamePhase.START, color = game.player2.color.lowercase(), gameId = rematchGameId))
             }
 
-            else -> logger.error { "End | State problem, both players have open sessions, the game should have started!" }
+            else -> {
+                throw InvalidGameState("End | State problem, both players have opened sessions, the game should have started!").also {
+                    logger.error { it.message }
+                }
+            }
         }
     }
 
-    override fun closeGame(id: String) {
-        logger.info("Start | Closing Connection for gameId: $id")
-        // could do a security check if the session matches a session in the active game that needs to be closed
-        val removedGame = activeGames.remove(id)
-        waitingPlayers.remove(removedGame?.player1)
-        waitingPlayers.remove(removedGame?.player2)
+    override fun closeGame(endMessage: End) {
+        val gameId = endMessage.gameId
+        logger.info("Start | Closing Connection for gameId: ${gameId}")
 
-        if (removedGame?.player1?.session?.isOpen == true) {
-            removedGame?.player1?.session?.close()
+        broadcast(endMessage)
+        // could do a security check if the session matches a session in the active game that needs to be closed
+        val removedGame = activeGames.remove(gameId)
+            ?: throw GameNotFound(gameId, "Trying to close a game: $gameId but it's not found!").also {
+                logger.error { it.message }
+            }
+        waitingPlayers.remove(removedGame.player1)
+        waitingPlayers.remove(removedGame.player2)
+
+        if (removedGame.player1.session?.isOpen == true) {
+            removedGame.player1.session?.close()
         }
-        if (removedGame?.player2?.session?.isOpen == true) {
-            removedGame?.player2?.session?.close()
+        if (removedGame.player2.session?.isOpen == true) {
+            removedGame.player2.session?.close()
         }
 
         activeGames.forEach { entry ->
@@ -96,7 +110,7 @@ class DefaultGamesService : GamesManager {
         }
     }
 
-    override fun getGame(gameId: String): Game = activeGames[gameId] ?: throw NotFoundException("There is no active game: $gameId")
+    override fun getGame(gameId: String): Game = activeGames[gameId] ?: throw GameNotFound(gameId, "Cannot find active game: $gameId")
 
     /** Puts a new Game object in the map so that connectToRematchGame() is able to put users in the Game.
      *  Also switches the colors of players */
@@ -132,14 +146,15 @@ class DefaultGamesService : GamesManager {
     }
 
     override fun changePlayerName(userId: String, changeNameMessage: ChangeName) {
-        // todo: Make custom ex and handle in OnError
-        val game = activeGames[changeNameMessage.gameId] ?: throw IllegalArgumentException("tbd")
+        val game = activeGames[changeNameMessage.gameId]
+            ?: throw GameNotFound(gameId = changeNameMessage.gameId, "Cannot find active game with id: ${changeNameMessage.gameId}")
 
         when {
             game.player1.userId == userId -> {
                 game.player1.username = changeNameMessage.name
                 game.player2.session?.asyncRemote?.sendObject(changeNameMessage)
             }
+
             game.player2.userId == userId -> {
                 game.player2.username = changeNameMessage.name
                 game.player1.session?.asyncRemote?.sendObject(changeNameMessage)

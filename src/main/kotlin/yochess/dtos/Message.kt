@@ -15,6 +15,7 @@ import yochess.services.GamePhase
     JsonSubTypes.Type(value = Move::class, name = "MOVE"),
     JsonSubTypes.Type(value = End::class, name = "END"),
     JsonSubTypes.Type(value = ChangeName::class, name = "CHANGE_NAME"),
+    JsonSubTypes.Type(value = CommunicationError::class, name = "COMMUNICATION_ERROR"),
 )
 sealed class Message
 
@@ -56,9 +57,15 @@ data class End(
 ) : Message()
 
 data class ChangeName(
-    val kind: String =  "CHANGE_NAME",
+    val kind: String = "CHANGE_NAME",
     val gameId: String,
     val name: String
+): Message()
+
+data class CommunicationError(
+    val kind: String = "COMMUNICATION_ERROR",
+    val isPresent: Boolean = true,
+    val userMessage: String
 ): Message()
 
 data class Castle(
