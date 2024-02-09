@@ -32,7 +32,7 @@ data class Move(
     val squareFrom: String,
     val squareTo: String,
     val gameId: String,
-    val valid: Boolean = false,
+    var valid: Boolean = false,
     val position: String? = null,
     val enPassantCapturePos: String? = null,
     val promotion: String? = null,
@@ -47,13 +47,14 @@ data class Move(
 data class End(
     val kind: String = "END",
     val gameId: String,
-    val winner: String? = null,
+    var timeout: Boolean? = null,
     val ended: Boolean? = null,
     val leftGame: Boolean? = null,
     val close: Boolean? = null,
     val rematch: Boolean? = null,
     val rematchSuccess: Boolean? = null,
     val rematchGameId: String? = null,
+    var gameOver: GameOver? = null,
 ) : Message()
 
 data class ChangeName(
@@ -82,3 +83,8 @@ data class Time(
         val DEFAULT_TIME_LEFT = Time(500L, 500L)
     }
 }
+
+data class GameOver(
+    val winner: String,
+    val result: String,
+)

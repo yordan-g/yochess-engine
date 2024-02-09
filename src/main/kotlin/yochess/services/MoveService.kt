@@ -2,9 +2,7 @@ package yochess.services
 
 import jakarta.enterprise.context.ApplicationScoped
 import mu.KotlinLogging
-import yochess.dtos.Castle
-import yochess.dtos.Move
-import yochess.dtos.Time
+import yochess.dtos.*
 import yochess.services.GameState.Companion.DIRECTIONS
 import yochess.services.GameState.Companion.EMPTY_MOVE_REQUEST
 import yochess.services.XY.Companion.idxToFile
@@ -15,27 +13,27 @@ import kotlin.math.max
 import kotlin.math.min
 
 interface MoveService {
-    fun processMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move
+    fun processMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, End?>
 }
 
 @ApplicationScoped
 class DefaultMoveService : MoveService {
     private val logger = KotlinLogging.logger {}
 
-    override fun processMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Move {
+    override fun processMove(gameState: GameState, from: XY, to: XY, moveRequest: Move): Pair<Move, End?> {
         if (gameState.turn != gameState.board[from].color) {
             return moveRequest.apply {
                 whiteCaptures = gameState.wCaptures
                 blackCaptures = gameState.bCaptures
-            }
+            } to null
         }
 
-        return gameState
+        val messageResult: Pair<Move, End?> = gameState
             .board[from]
             .move(gameState, from, to, moveRequest)
             .let { (moveResult, capturedPiece) ->
                 when (moveResult.valid) {
-                    false -> moveResult
+                    false -> moveResult to null
                     true -> {
                         gameState.logMove(moveRequest, capturedPiece.id)
                         gameState.updateActivePieces(
@@ -49,23 +47,33 @@ class DefaultMoveService : MoveService {
                             .isInCheckmateOrStalemate(gameState, gameState.getKingPosition(gameState.getOpponentColor()))
 //                        logger.debug { "---- CHECKMATE --- $inCheckmate $inCheckmate $inCheckmate" }
                         when {
-                            inCheckmate -> moveResult.copy(end = "Checkmate")
-                            inStalemate -> moveResult.copy(end = "Stalemate")
+                            inCheckmate -> moveResult.apply { valid = true } to End(
+                                gameId = moveRequest.gameId,
+                                ended = true,
+                                gameOver = GameOver(winner = gameState.turn.lowercase(), result = "Checkmate!")
+                            ).also { gameState.gameOver = it.gameOver }
+
+                            inStalemate -> moveResult.apply { valid = true } to End(
+                                gameId = moveRequest.gameId,
+                                ended = true,
+                                gameOver = GameOver(winner = "d", result = "Stalemate!")
+                            ).also { gameState.gameOver = it.gameOver }
+
                             else -> {
 //                                logger.debug { "End move: \n${gameState.board.print()}" }
-
                                 moveResult.apply {
                                     timeLeft = gameState.changeTurn()
                                     turn = gameState.turn.name.lowercase()
-                                }
+                                    whiteCaptures = gameState.wCaptures
+                                    blackCaptures = gameState.bCaptures
+                                } to null
                             }
                         }
                     }
                 }
-            }.also {
-                it.whiteCaptures = gameState.wCaptures
-                it.blackCaptures = gameState.bCaptures
             }
+
+        return messageResult
     }
 }
 
@@ -830,19 +838,17 @@ object EM : Piece {
     override fun generateMoves(currentPos: XY): List<XY> = throw UnsupportedOperationException("No piece, can't generate moves!")
 }
 
-enum class Color(val value: String) {
+enum class Color(private val value: String) {
     W("w"),
     B("b");
 
-    fun lowercase(): String {
-        return value
-    }
+    fun lowercase() = value
 }
 
 class Clock {
-    var white = 500L
-    var black = 500L
-    var startTime: Long = System.currentTimeMillis()
+    private var white = 500L
+    private var black = 500L
+    private var startTime: Long = System.currentTimeMillis()
 
     fun endPlayerTurn(turn: Color): Time {
         val currentTime = System.currentTimeMillis()
@@ -862,9 +868,10 @@ class Clock {
 
 class GameState {
     val board: Array<Array<Piece>> = initBoard()
-    val clock = Clock()
+    private val clock = Clock()
     var turn: Color = Color.W
     var enPassantTarget: XY? = null
+    var gameOver: GameOver? = null
 
     private var posWK: XY = XY(3, 0)
     private var posBK: XY = XY(3, 7)

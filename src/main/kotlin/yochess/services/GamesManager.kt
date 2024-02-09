@@ -3,22 +3,19 @@ package yochess.services
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.Session
 import mu.KotlinLogging
-import yochess.dtos.ChangeName
-import yochess.dtos.End
-import yochess.dtos.Init
-import yochess.dtos.Move
+import yochess.dtos.*
 import java.util.*
 import java.util.concurrent.*
 
 interface GamesManager {
     fun connectToRandomGame(userId: String, session: Session)
     fun connectToRematchGame(rematchGameId: String, userId: String, session: Session)
-    fun broadcast(moveResult: Move)
-    fun broadcast(endMessage: End)
+    fun broadcast(message: Message)
     fun closeGame(endMessage: End)
     fun getGame(gameId: String): Game
     fun offerRematch(gameId: String, userId: String)
     fun changePlayerName(userId: String, changeNameMessage: ChangeName)
+    fun endGame(message: End, userId: String)
 }
 
 data class GameNotFound(val gameId: String, override val message: String) : RuntimeException(message)
@@ -83,7 +80,7 @@ class DefaultGamesService : GamesManager {
 
     override fun closeGame(endMessage: End) {
         val gameId = endMessage.gameId
-        logger.info("Start | Closing Connection for gameId: $gameId")
+        logger.info { "Start | Closing Connection for gameId: $gameId" }
 
         broadcast(endMessage)
         // could do a security check if the session matches a session in the active game that needs to be closed
@@ -139,7 +136,7 @@ class DefaultGamesService : GamesManager {
 
     override fun changePlayerName(userId: String, changeNameMessage: ChangeName) {
         val game = activeGames[changeNameMessage.gameId]
-            ?: throw GameNotFound(gameId = changeNameMessage.gameId, "Cannot find active game with id: ${changeNameMessage.gameId}")
+            ?: throw GameNotFound(changeNameMessage.gameId, "Cannot find active game with id: ${changeNameMessage.gameId}")
 
         when {
             game.player1.userId == userId -> {
@@ -154,7 +151,22 @@ class DefaultGamesService : GamesManager {
         }
     }
 
-    override fun broadcast(moveResult: Move) {
+    override fun endGame(message: End, userId: String) {
+        val game = activeGames[message.gameId]
+            ?: throw GameNotFound(message.gameId, "Cannot find active game with id: ${message.gameId}")
+
+        game.state.gameOver = message.gameOver
+    }
+
+    override fun broadcast(message: Message) {
+        when (message) {
+            is Move -> broadcastMove(message)
+            is End -> broadcastEnd(message)
+            else -> {}
+        }
+    }
+
+    fun broadcastMove(moveResult: Move) {
         logger.debug { "Sending | $moveResult" }
 
         activeGames[moveResult.gameId]?.let {
@@ -163,12 +175,12 @@ class DefaultGamesService : GamesManager {
         }
     }
 
-    override fun broadcast(endMessage: End) {
+    fun broadcastEnd(endMessage: End) {
         logger.info { "Sending | $endMessage" }
 
-        activeGames[endMessage.gameId]?.let {
-            it.player1.session.asyncRemote.sendObject(endMessage)
-            it.player2.session.asyncRemote.sendObject(endMessage)
+        activeGames[endMessage.gameId]?.let { game ->
+            game.player1.session.asyncRemote.sendObject(endMessage.apply { this.gameOver = game.state.gameOver })
+            game.player2.session.asyncRemote.sendObject(endMessage.apply { this.gameOver = game.state.gameOver })
         }
     }
 }

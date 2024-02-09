@@ -40,46 +40,53 @@ class WebSocketResource(
 
     @OnMessage
     fun onMessage(
-        message: Message,
+        incomingMessage: Message,
         @PathParam("userId") userId: String
     ) {
-        when (message) {
+        when (incomingMessage) {
             is Init -> {}
             is CommunicationError -> {}
             is Move -> {
-                val moveResult = moveService.processMove(
-                    gameState = gamesService.getGame(message.gameId).state,
-                    from = message.squareFrom.toXY(),
-                    to = message.squareTo.toXY(),
-                    moveRequest = message
+                val (moveResult: Move, endResult: End?) = moveService.processMove(
+                    gameState = gamesService.getGame(incomingMessage.gameId).state,
+                    from = incomingMessage.squareFrom.toXY(),
+                    to = incomingMessage.squareTo.toXY(),
+                    moveRequest = incomingMessage
                 )
+
                 gamesService.broadcast(moveResult)
+                endResult?.let { gamesService.broadcast(endResult) }
             }
 
             is End -> {
                 when {
-                    message.leftGame == true -> {
-                        gamesService.closeGame(message)
+                    incomingMessage.leftGame == true -> {
+                        gamesService.closeGame(incomingMessage)
                     }
 
-                    message.close == true -> {
-                        gamesService.closeGame(message)
+                    incomingMessage.close == true -> {
+                        gamesService.closeGame(incomingMessage)
                     }
 
-                    message.rematch == true -> {
+                    incomingMessage.rematch == true -> {
                         logger.info { "Received rematch message ---" }
 
-                        gamesService.offerRematch(message.gameId, userId)
+                        gamesService.offerRematch(incomingMessage.gameId, userId)
                     }
 
-                    else -> gamesService.broadcast(message)
+                    incomingMessage.timeout == true -> {
+                        gamesService.endGame(incomingMessage, userId)
+                        gamesService.broadcast(incomingMessage)
+                    }
+
+                    else -> gamesService.broadcast(incomingMessage)
                 }
             }
 
             is ChangeName -> {
-                logger.info { "Received ChangeName message for userId: $userId, message: $message" }
+                logger.info { "Received ChangeName message for userId: $userId, message: $incomingMessage" }
 
-                gamesService.changePlayerName(userId, message)
+                gamesService.changePlayerName(userId, incomingMessage)
             }
         }
     }
@@ -107,9 +114,11 @@ class WebSocketResource(
                 )
                 session.close()
             }
+
             is InvalidGameState -> {
                 // todo: determine if this causes issues for users
             }
+
             else -> {
                 session.close()
             }

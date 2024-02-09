@@ -1,11 +1,13 @@
 package yochess
 
 import io.kotest.assertions.withClue
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.quarkus.test.junit.QuarkusTest
 import jakarta.inject.Inject
 import mu.KotlinLogging
 import org.junit.jupiter.api.Test
+import yochess.dtos.End
 import yochess.dtos.Move
 import yochess.services.*
 import yochess.services.GameState.Companion.EMPTY_MOVE_REQUEST
@@ -32,15 +34,16 @@ class MoveServiceTests {
         realGames.forEachIndexed { gIn, realGame ->
             logger.info("### Start Testing Game N: ${gIn + 1}")
             val yochessGameState = GameState()
-            var moveResult: Move? = null
+            var endResult: End? = null
 
             realGame.moves.forEachIndexed { mIn, move ->
                 val from = move.slice(0..1).toXY()
                 val to = move.slice(2..3).toXY()
                 logger.debug { "## MOVE: $move -- $from to $to. From P: ${yochessGameState.board[from].signature()} | index: $mIn" }
 
-                moveResult = moveService.processMove(yochessGameState, from, to, getMoveRequest(move))
-                moveResult!!.valid shouldBe true
+                val (moveResult, end) = moveService.processMove(yochessGameState, from, to, getMoveRequest(move))
+                moveResult.valid shouldBe true
+                endResult = end
             }
 
             val yochessEndPieces = yochessGameState.wPieces.size + yochessGameState.bPieces.size
@@ -49,7 +52,8 @@ class MoveServiceTests {
                     " State - Yochess: '$yochessEndPieces', Real: ${realGame.endPieces.length}\n" +
                     "'${realGame}'"
             ) {
-                moveResult?.end shouldBe "Checkmate"
+                endResult.shouldNotBeNull()
+                endResult?.gameOver?.result shouldBe "Checkmate!"
                 yochessEndPieces shouldBe realGame.endPieces.length
                 yochessGameState.turn.name shouldBe realGame.winner
             }
@@ -63,15 +67,16 @@ class MoveServiceTests {
         realGames.forEachIndexed { gIn, realGame ->
             logger.info("### Start Testing Game N: ${gIn + 1}")
             val yochessGameState = GameState()
-            var moveResult: Move? = null
+            var endResult: End? = null
 
             realGame.moves.forEachIndexed { mIn, move ->
                 val from = move.slice(0..1).toXY()
                 val to = move.slice(2..3).toXY()
                 logger.debug { "## MOVE: $move -- $from to $to. From P: ${yochessGameState.board[from].signature()} | index: $mIn" }
 
-                moveResult = moveService.processMove(yochessGameState, from, to, getMoveRequest(move))
-                moveResult!!.valid shouldBe true
+                val (moveResult, end) = moveService.processMove(yochessGameState, from, to, getMoveRequest(move))
+                moveResult.valid shouldBe true
+                endResult = end
             }
 
             val yochessEndPieces = yochessGameState.wPieces.size + yochessGameState.bPieces.size
@@ -80,9 +85,9 @@ class MoveServiceTests {
                     " State - Yochess: '$yochessEndPieces', Real: ${realGame.endPieces.length}\n" +
                     "'${realGame}'"
             ) {
-                moveResult?.end shouldBe "Stalemate"
+                endResult.shouldNotBeNull()
+                endResult?.gameOver?.result shouldBe "Stalemate!"
                 yochessEndPieces shouldBe realGame.endPieces.length
-//                yochessGameState.turn shouldBe realGame.winner
             }
         }
     }
