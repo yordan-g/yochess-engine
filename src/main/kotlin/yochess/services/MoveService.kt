@@ -855,14 +855,18 @@ class Clock {
         val timeSpent = (currentTime - startTime) / 1000 // Convert to seconds
 
         when (turn) {
-            Color.W -> white -= timeSpent
-            else -> black -= timeSpent
+            Color.W -> white = white - timeSpent + DEFAULT_INCREMENT
+            else -> black = black - timeSpent + DEFAULT_INCREMENT
         }
 
         // Switch turns and update startTime for the next player
         startTime = System.currentTimeMillis()
 
         return Time(white, black)
+    }
+
+    companion object {
+        private const val DEFAULT_INCREMENT = 5L
     }
 }
 
