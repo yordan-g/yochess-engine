@@ -2,8 +2,11 @@ package yochess
 
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.*
+import jakarta.websocket.server.HandshakeRequest
 import jakarta.websocket.server.PathParam
 import jakarta.websocket.server.ServerEndpoint
+import jakarta.websocket.server.ServerEndpointConfig
+import jakarta.ws.rs.WebApplicationException
 import mu.KotlinLogging
 import yochess.dtos.*
 import yochess.services.*
@@ -12,7 +15,8 @@ import yochess.services.*
 @ServerEndpoint(
     "/chess/{userId}",
     encoders = [MessageEnDecoder::class],
-    decoders = [MessageEnDecoder::class]
+    decoders = [MessageEnDecoder::class],
+    configurator = CustomConfigurator::class
 )
 class WebSocketResource(
     private val moveService: MoveService,
@@ -25,13 +29,21 @@ class WebSocketResource(
         session: Session,
         @PathParam("userId") userId: String
     ) {
-        val queryParams = session.requestParameterMap
-        val rematchGameId = queryParams["rematchGameId"]?.firstOrNull()
-        logger.info { "rematchGameId -- $rematchGameId" }
+
+        val rematchGameId = session.requestParameterMap["rematchGameId"]?.firstOrNull()
+
+        val customGameId = session.requestParameterMap["customGameId"]?.firstOrNull()
+        val isCreator = session.requestParameterMap["isCreator"]?.firstOrNull()
+
+        logger.info { "rematchGameId -- $rematchGameId | customGameId -- $customGameId | isCreator -- $isCreator" }
 
         when {
             rematchGameId != null -> {
                 gamesService.connectToRematchGame(rematchGameId, userId, session)
+            }
+
+            customGameId != null -> {
+                gamesService.connectToCustomGame(customGameId, isCreator, userId, session)
             }
 
             else -> gamesService.connectToRandomGame(userId, session)
@@ -115,8 +127,16 @@ class WebSocketResource(
                 session.close()
             }
 
+            is BadCustomGameRequest -> {
+                session.asyncRemote.sendObject(
+                    CommunicationError(userMessage = "The game room doesn't exist. Please check with you friend or start another game!")
+                )
+                session.close()
+            }
+
             is InvalidGameState -> {
                 // todo: determine if this causes issues for users
+                session.close()
             }
 
             else -> {
@@ -127,5 +147,12 @@ class WebSocketResource(
         // 1. send a message to the client saying what happened
         //      may search game by session so that we can notify both players
         // 2. session.close()
+    }
+}
+
+class CustomConfigurator : ServerEndpointConfig.Configurator() {
+    override fun modifyHandshake(sec: ServerEndpointConfig?, request: HandshakeRequest?, response: HandshakeResponse?) {
+//        throw WebApplicationException()
+        super.modifyHandshake(sec, request, response)
     }
 }

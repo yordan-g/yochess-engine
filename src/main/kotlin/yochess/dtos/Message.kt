@@ -54,7 +54,7 @@ data class End(
     val rematch: Boolean? = null,
     val rematchSuccess: Boolean? = null,
     val rematchGameId: String? = null,
-    var gameOver: GameOver? = null,
+    var gameOver: GameOver? = null
 ) : Message()
 
 data class ChangeName(

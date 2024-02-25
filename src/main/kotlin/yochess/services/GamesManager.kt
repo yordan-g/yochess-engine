@@ -10,6 +10,7 @@ import java.util.concurrent.*
 interface GamesManager {
     fun connectToRandomGame(userId: String, session: Session)
     fun connectToRematchGame(rematchGameId: String, userId: String, session: Session)
+    fun connectToCustomGame(customGameId: String, isCreator: String?, userId: String, session: Session)
     fun broadcast(message: Message)
     fun closeGame(endMessage: End)
     fun getGame(gameId: String): Game
@@ -20,6 +21,7 @@ interface GamesManager {
 
 data class GameNotFound(val gameId: String, override val message: String) : RuntimeException(message)
 data class InvalidGameState(override val message: String) : RuntimeException(message)
+data class BadCustomGameRequest(override val message: String) : RuntimeException(message)
 
 @ApplicationScoped
 class DefaultGamesService : GamesManager {
@@ -31,20 +33,28 @@ class DefaultGamesService : GamesManager {
         logger.info { "Start | User: $userId connecting to a random game." }
 
         when (val matchedPlayer = waitingPlayers.poll()) {
-            null -> "Waiting for game".also {
+            null -> {
+                val newGameId = UUID.randomUUID().toString()
                 val player1 = Player(userId = userId, color = Color.W).apply { this.session = session }
+                activeGames[newGameId] = Game(player1, Player(color = Color.B))
                 waitingPlayers.offer(player1)
-                player1.session.asyncRemote.sendObject(Init(gameId = it))
+
+                player1.session.asyncRemote.sendObject(Init(gameId = newGameId, color = player1.color.lowercase()))
             }
 
-            else -> UUID.randomUUID().toString().also { newGameId ->
-                val player2 = Player(userId = userId, color = Color.B).apply { this.session = session }
-                activeGames[newGameId] = Game(player2, matchedPlayer)
-                matchedPlayer.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = matchedPlayer.color.lowercase(), gameId = newGameId))
-                player2.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = player2.color.lowercase(), gameId = newGameId))
+            else -> {
+                val (gameId, game) = activeGames.filter { entry -> entry.value.player1.userId == matchedPlayer.userId }
+                    .map { Pair(it.key, it.value) }
+                    .firstOrNull()
+                    ?: throw InvalidGameState("A second player tries do connect to a game but the game can't be found in the Map!")
+
+                game.player2.userId = userId
+                game.player2.session = session
+                game.player1.session.asyncRemote.sendObject(Init(type = GamePhase.START, gameId = gameId, color = game.player1.color.lowercase()))
+                game.player2.session.asyncRemote.sendObject(Init(type = GamePhase.START, gameId = gameId, color = game.player2.color.lowercase()))
             }
         }.also {
-            logger.info { "End | User: $userId connected to game: $it" }
+            logger.info { "End | User: $userId connected to game" }
             logger.info { "waitingPlayers: ${waitingPlayers.size}" }
             logger.info { "activeGames: ${activeGames.size}" }
         }
@@ -74,6 +84,31 @@ class DefaultGamesService : GamesManager {
                 throw InvalidGameState("End | State problem, both players have opened sessions, the game should have started!").also {
                     logger.error { it.message }
                 }
+            }
+        }
+    }
+
+    override fun connectToCustomGame(customGameId: String, isCreator: String?, userId: String, session: Session) {
+        logger.info { "Start | Custom Game | User $userId connects to game: $customGameId." }
+
+        when (val game = activeGames[customGameId]) {
+            null -> {
+                isCreator ?: throw BadCustomGameRequest("End | Custom Game | Game $customGameId doesn't exist.").also {
+                    logger.warn { it.message }
+                }
+
+                activeGames[customGameId] = Game(
+                    Player(userId = userId, color = Color.W).apply { this.session = session },
+                    Player(color = Color.B)
+                )
+                session.asyncRemote.sendObject(Init(gameId = customGameId))
+            }
+
+            else -> {
+                game.player2.userId = userId
+                game.player2.session = session
+                game.player1.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = game.player1.color.lowercase(), gameId = customGameId))
+                game.player2.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = game.player2.color.lowercase(), gameId = customGameId))
             }
         }
     }
@@ -180,7 +215,11 @@ class DefaultGamesService : GamesManager {
 
         activeGames[endMessage.gameId]?.let { game ->
             game.player1.session.asyncRemote.sendObject(endMessage.apply { this.gameOver = game.state.gameOver })
-            game.player2.session.asyncRemote.sendObject(endMessage.apply { this.gameOver = game.state.gameOver })
+            // When game is in init phase and a player is waiting session is not initialised and if the waiting player leaves,
+            // the room can't close properly because session access throws
+            if (game.player2.userId != null) {
+                game.player2.session.asyncRemote.sendObject(endMessage.apply { this.gameOver = game.state.gameOver })
+            }
         }
     }
 }
