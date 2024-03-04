@@ -77,19 +77,31 @@
 #   accessed directly. (example: "foo.example.com,bar.example.com")
 #
 ###
-FROM registry.access.redhat.com/ubi8/openjdk-17:1.15
+FROM registry.access.redhat.com/ubi8/openjdk-17:1.15 AS build
+
+WORKDIR /yochess-engine
+COPY gradle ./gradle
+COPY src ./src
+COPY gradlew ./
+COPY build.gradle ./
+COPY settings.gradle ./
+COPY gradle.properties ./
+
+RUN ./gradlew build
+
+FROM registry.access.redhat.com/ubi8/openjdk-17:1.15 AS production
 
 ENV LANGUAGE='en_US:en'
 
+WORKDIR /yochess-engine
 
 # We make four distinct layers so if there are application changes the library layers can be re-used
-COPY --chown=185 build/quarkus-app/lib/ /deployments/lib/
-COPY --chown=185 build/quarkus-app/*.jar /deployments/
-COPY --chown=185 build/quarkus-app/app/ /deployments/app/
-COPY --chown=185 build/quarkus-app/quarkus/ /deployments/quarkus/
+COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/lib/ /deployments/lib/
+COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/*.jar /deployments/
+COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/app/ /deployments/app/
+COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/quarkus/ /deployments/quarkus/
 
 EXPOSE 8080
 USER 185
 ENV JAVA_OPTS="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
-ENV JAVA_APP_JAR="/deployments/quarkus-run.jar"
-
+ENV JAVA_APP_JAR="/deployments/quarkus-run.jar

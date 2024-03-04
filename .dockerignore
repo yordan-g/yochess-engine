@@ -3,3 +3,11 @@
 !build/*-runner.jar
 !build/lib/*
 !build/quarkus-app/*
+
+!gradle
+!src
+!gradlew
+!gradlew.bat
+!build.gradle
+!settings.gradle
+!gradle.properties
