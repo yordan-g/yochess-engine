@@ -4,3 +4,14 @@ quarkus:
     category:
       "io.quarkus":
         level: INFO
+
+"%staging":
+  quarkus:
+    http:
+      ssl:
+        certificate:
+          key-store-file: /deployments/cert/keystore.p12
+          key-store-password: staging
+          key-store-file-type: PKCS12
+      port: 8443
+      insecure-requests: disabled

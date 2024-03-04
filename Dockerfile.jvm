@@ -8,10 +8,12 @@
 # Then, build the image with:
 #
 # docker build -f src/main/docker/Dockerfile.jvm -t quarkus/yochess-jvm .
+# docker build -f Dockerfile.jvm --build-arg ENVIRONMENT=staging -t yochess-engine:staging .
 #
 # Then run the container using:
 #
 # docker run -i --rm -p 8080:8080 quarkus/yochess-jvm
+# docker run -i --rm -p 8443:8443 yochess-engine:staging
 #
 # If you want to include the debug port into your docker image
 # you will have to expose the debug port (default 5005 being the default) like this :  EXPOSE 8080 5005.
@@ -77,7 +79,8 @@
 #   accessed directly. (example: "foo.example.com,bar.example.com")
 #
 ###
-FROM registry.access.redhat.com/ubi8/openjdk-17:1.15 AS build
+FROM registry.access.redhat.com/ubi8/openjdk-17:1.19 AS build
+ARG ENVIRONMENT=prod
 
 WORKDIR /yochess-engine
 COPY gradle ./gradle
@@ -87,11 +90,15 @@ COPY build.gradle ./
 COPY settings.gradle ./
 COPY gradle.properties ./
 
-RUN ./gradlew build
+RUN if [ "$ENVIRONMENT" = "staging" ]; then \
+      ./gradlew build -Dquarkus.profile=staging; \
+    else \
+      ./gradlew build; \
+    fi
 
-FROM registry.access.redhat.com/ubi8/openjdk-17:1.15 AS production
-
+FROM registry.access.redhat.com/ubi8/openjdk-17:1.19 AS production
 ENV LANGUAGE='en_US:en'
+ARG ENVIRONMENT=prod
 
 WORKDIR /yochess-engine
 
@@ -101,7 +108,23 @@ COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/*.jar /deploymen
 COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/app/ /deployments/app/
 COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/quarkus/ /deployments/quarkus/
 
+USER root
+RUN if [ "$ENVIRONMENT" = "staging" ]; then \
+        # Install openssl
+        microdnf --setopt=tsflags=nodocs install -y openssl && \
+        # Generate a self-signed certificate and private key
+        openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj '/CN=localhost' && \
+        # Convert the certificate and key into a PKCS12 keystore
+        openssl pkcs12 -export -in cert.pem -inkey key.pem -out keystore.p12 -name myapp-ssl -passout pass:staging && \
+        # Create a directory for the keystore
+        mkdir -p /deployments/cert && \
+        # Move the keystore to the designated directory
+        mv keystore.p12 /deployments/cert/ && \
+        # Change ownership of the /deployments/cert directory and its contents to user 185
+        chown -R 185:185 /deployments/cert; \
+    fi
+
 EXPOSE 8080
 USER 185
 ENV JAVA_OPTS="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
-ENV JAVA_APP_JAR="/deployments/quarkus-run.jar
+ENV JAVA_APP_JAR="/deployments/quarkus-run.jar"
