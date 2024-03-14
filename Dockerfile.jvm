@@ -80,7 +80,6 @@
 #
 ###
 FROM registry.access.redhat.com/ubi8/openjdk-17:1.19 AS build
-ARG ENVIRONMENT=prod
 
 WORKDIR /yochess-engine
 COPY gradle ./gradle
@@ -90,16 +89,11 @@ COPY build.gradle ./
 COPY settings.gradle ./
 COPY gradle.properties ./
 
-RUN if [ "$ENVIRONMENT" = "staging" ]; then \
-      ./gradlew build -Dquarkus.profile=staging; \
-    else \
-      ./gradlew build; \
-    fi
+RUN ./gradlew build
 
 FROM registry.access.redhat.com/ubi8/openjdk-17:1.19 AS production
-ENV LANGUAGE='en_US:en'
-ARG ENVIRONMENT=prod
 
+ENV LANGUAGE='en_US:en'
 WORKDIR /yochess-engine
 
 # We make four distinct layers so if there are application changes the library layers can be re-used
@@ -107,22 +101,6 @@ COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/lib/ /deployment
 COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/*.jar /deployments/
 COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/app/ /deployments/app/
 COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/quarkus/ /deployments/quarkus/
-
-USER root
-RUN if [ "$ENVIRONMENT" = "staging" ]; then \
-        # Install openssl
-        microdnf --setopt=tsflags=nodocs install -y openssl && \
-        # Generate a self-signed certificate and private key
-        openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj '/CN=localhost' && \
-        # Convert the certificate and key into a PKCS12 keystore
-        openssl pkcs12 -export -in cert.pem -inkey key.pem -out keystore.p12 -name myapp-ssl -passout pass:staging && \
-        # Create a directory for the keystore
-        mkdir -p /deployments/cert && \
-        # Move the keystore to the designated directory
-        mv keystore.p12 /deployments/cert/ && \
-        # Change ownership of the /deployments/cert directory and its contents to user 185
-        chown -R 185:185 /deployments/cert; \
-    fi
 
 EXPOSE 8080
 USER 185
