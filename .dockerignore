@@ -5,6 +5,7 @@
 !build/quarkus-app/*
 
 !gradle
+!gradle/wrapper/*
 !src
 !gradlew
 !gradlew.bat
