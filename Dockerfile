@@ -83,12 +83,15 @@ FROM registry.access.redhat.com/ubi8/openjdk-17:1.19 AS build
 
 WORKDIR /yochess-engine
 COPY gradle ./gradle
-COPY src ./src
 COPY gradlew ./
+COPY gradlew.bat ./
+
+COPY src ./src
 COPY build.gradle ./
 COPY settings.gradle ./
 COPY gradle.properties ./
 
+USER root
 RUN ./gradlew build
 
 FROM registry.access.redhat.com/ubi8/openjdk-17:1.19 AS production
