@@ -16,7 +16,7 @@ import yochess.services.*
     "/chess/{userId}",
     encoders = [MessageEnDecoder::class],
     decoders = [MessageEnDecoder::class],
-    configurator = CustomConfigurator::class
+//    configurator = CustomConfigurator::class
 )
 class WebSocketResource(
     private val moveService: MoveService,
@@ -29,7 +29,6 @@ class WebSocketResource(
         session: Session,
         @PathParam("userId") userId: String
     ) {
-
         val rematchGameId = session.requestParameterMap["rematchGameId"]?.firstOrNull()
 
         val customGameId = session.requestParameterMap["customGameId"]?.firstOrNull()
@@ -117,7 +116,9 @@ class WebSocketResource(
         @PathParam("userId") userId: String,
         throwable: Throwable
     ) {
-//        logger.error { "Connection Issue | ... ${throwable.message}" }
+        logger.error { "Connection Issue | ${throwable.message}" }
+        logger.error { "Connection Issue | ${throwable.localizedMessage}" }
+        logger.error { "Connection Issue | ${throwable.cause}" }
 
         when (throwable) {
             is GameNotFound -> {
@@ -150,9 +151,9 @@ class WebSocketResource(
     }
 }
 
-class CustomConfigurator : ServerEndpointConfig.Configurator() {
-    override fun modifyHandshake(sec: ServerEndpointConfig?, request: HandshakeRequest?, response: HandshakeResponse?) {
-//        throw WebApplicationException()
-        super.modifyHandshake(sec, request, response)
-    }
-}
+//class CustomConfigurator : ServerEndpointConfig.Configurator() {
+//    override fun modifyHandshake(sec: ServerEndpointConfig?, request: HandshakeRequest?, response: HandshakeResponse?) {
+////        throw WebApplicationException()
+//        super.modifyHandshake(sec, request, response)
+//    }
+//}
