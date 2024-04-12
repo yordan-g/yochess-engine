@@ -19,6 +19,7 @@ interface GamesManager {
     fun endGame(message: End, userId: String)
     fun getWaitingPlayers(): LinkedList<Player>
     fun getActiveGames(): HashMap<String, Game>
+    fun closeGameUponClientSessionEnd(userId: String)
 }
 
 data class GameNotFound(val gameId: String, override val message: String) : RuntimeException(message)
@@ -227,6 +228,15 @@ class DefaultGamesService : GamesManager {
 
     override fun getWaitingPlayers() = LinkedList(waitingPlayers.map { it.copy() })
     override fun getActiveGames() = HashMap(activeGames)
+    override fun closeGameUponClientSessionEnd(userId: String) {
+        waitingPlayers.removeIf { it.userId == userId }
+        val gameId = activeGames.toList().firstOrNull {
+            it.second.player1.userId == userId ||
+            it.second.player2.userId == userId
+        }?.first
+
+        activeGames.remove(gameId)
+    }
 }
 
 enum class GamePhase { INIT, START }

@@ -30,7 +30,6 @@ class WebSocketResource(
         @PathParam("userId") userId: String
     ) {
         val rematchGameId = session.requestParameterMap["rematchGameId"]?.firstOrNull()
-
         val customGameId = session.requestParameterMap["customGameId"]?.firstOrNull()
         val isCreator = session.requestParameterMap["isCreator"]?.firstOrNull()
 
@@ -108,6 +107,8 @@ class WebSocketResource(
         @PathParam("userId") userId: String
     ) {
         logger.info { "Session closed --------------" }
+        // TODO: Could affect closing a game from the UI with request from closeGame()
+        gamesService.closeGameUponClientSessionEnd(userId)
     }
 
     @OnError
