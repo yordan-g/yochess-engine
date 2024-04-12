@@ -17,6 +17,8 @@ interface GamesManager {
     fun offerRematch(gameId: String, userId: String)
     fun changePlayerName(userId: String, changeNameMessage: ChangeName)
     fun endGame(message: End, userId: String)
+    fun getWaitingPlayers(): LinkedList<Player>
+    fun getActiveGames(): HashMap<String, Game>
 }
 
 data class GameNotFound(val gameId: String, override val message: String) : RuntimeException(message)
@@ -222,6 +224,9 @@ class DefaultGamesService : GamesManager {
             }
         }
     }
+
+    override fun getWaitingPlayers() = LinkedList(waitingPlayers.map { it.copy() })
+    override fun getActiveGames() = HashMap(activeGames)
 }
 
 enum class GamePhase { INIT, START }
