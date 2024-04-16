@@ -38,11 +38,15 @@ class WebSocketResourceTests {
         EXCHANGED_MESSAGES.removeAll { true }
     }
 
+    /**
+     * All test share the same WS endpoint instance.
+     * */
+    val wsEndpoint: WebSocketContainer = ContainerProvider.getWebSocketContainer()
+
     @Nested
     inner class RandomGameTests {
         @Test
         fun `GIVEN single user tries to connect WHEN he is the first player THEN connection succeeds AND the returned ws message should be INIT GamePhase INIT`() {
-            val wsEndpoint = ContainerProvider.getWebSocketContainer()
             val client = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player1"))
 
             try {
@@ -64,7 +68,6 @@ class WebSocketResourceTests {
 
         @Test
         fun `GIVEN 4 users try to connect and start 2 games THEN connection succeeds AND 3 messages per game are exchanged`() {
-            val wsEndpoint = ContainerProvider.getWebSocketContainer()
             // Await between connections to allow messages to be exchanged in time and order.
             val client1 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player1"))
             Thread.sleep(1000)
@@ -137,7 +140,6 @@ class WebSocketResourceTests {
 
         @Test
         fun `GIVEN existing random game is played WHEN both players send request for rematch THEN they should receive new rematchGameId AND using it they should be connected to the new game`() {
-            val wsEndpoint = ContainerProvider.getWebSocketContainer()
             // Start a random game
             val client1 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player1"))
             Thread.sleep(1000)
@@ -207,7 +209,6 @@ class WebSocketResourceTests {
 
         @Test
         fun `GIVEN a user tries to connect to a Custom Game WHEN he is the 1st player and isCreator param is missing THEN game should not be started and CommunicationError message should be returned to the user`() {
-            val wsEndpoint = ContainerProvider.getWebSocketContainer()
             lateinit var client1: Session
 
             try {
@@ -227,7 +228,6 @@ class WebSocketResourceTests {
         @Test
         fun `GIVEN 2 users try to connect THEN connection succeeds AND 3 Init messages are exchanged`() {
             val testGameId = "testId"
-            val wsEndpoint = ContainerProvider.getWebSocketContainer()
             val client1 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player1?customGameId=${testGameId}&isCreator=true"))
             Thread.sleep(1000)
             val client2 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player2?customGameId=${testGameId}"))
