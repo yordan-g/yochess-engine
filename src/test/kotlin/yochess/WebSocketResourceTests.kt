@@ -14,10 +14,7 @@ import org.mockito.Mockito
 import org.mockito.kotlin.any
 import org.mockito.kotlin.times
 import yochess.WebSocketResourceTests.Companion.EXCHANGED_MESSAGES
-import yochess.dtos.End
-import yochess.dtos.Init
-import yochess.dtos.Message
-import yochess.dtos.MessageEnDecoder
+import yochess.dtos.*
 import yochess.services.GamePhase
 import yochess.services.GamesManager
 import java.net.URI
@@ -204,6 +201,64 @@ class WebSocketResourceTests {
             }
         }
     }
+
+    @Nested
+    inner class CustomGameTests {
+
+        @Test
+        fun `GIVEN a user tries to connect to a Custom Game WHEN he is the 1st player and isCreator param is missing THEN game should not be started and CommunicationError message should be returned to the user`() {
+            val wsEndpoint = ContainerProvider.getWebSocketContainer()
+            lateinit var client1: Session
+
+            try {
+                // The user tries to initiate a Custom Game outside the UI. Only the UI should set the isCreator param
+                client1 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player1?customGameId=testId"))
+                Thread.sleep(1000)
+                EXCHANGED_MESSAGES.pollLast(1, TimeUnit.SECONDS).also { message1 ->
+                    message1.shouldBeInstanceOf<CommunicationError>()
+                }
+
+                gamesManager.getActiveGames().size shouldBe 0
+            } finally {
+                client1.close()
+            }
+        }
+
+        @Test
+        fun `GIVEN 2 users try to connect THEN connection succeeds AND 3 Init messages are exchanged`() {
+            val testGameId = "testId"
+            val wsEndpoint = ContainerProvider.getWebSocketContainer()
+            val client1 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player1?customGameId=${testGameId}&isCreator=true"))
+            Thread.sleep(1000)
+            val client2 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player2?customGameId=${testGameId}"))
+            Thread.sleep(1000)
+
+            try {
+                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).also { message1 ->
+                    message1.shouldBeInstanceOf<Init>()
+                    message1.type shouldBe GamePhase.INIT
+                    message1.gameId shouldBe testGameId
+                }
+                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).also { message2 ->
+                    message2.shouldBeInstanceOf<Init>()
+                    message2.type shouldBe GamePhase.START
+                    message2.gameId shouldBe testGameId
+                }
+                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).also { message3 ->
+                    message3.shouldBeInstanceOf<Init>()
+                    message3.type shouldBe GamePhase.START
+                    message3.gameId shouldBe testGameId
+                }
+                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS) shouldBe null
+
+                gamesManager.getActiveGames().size shouldBe 1
+                gamesManager.getWaitingPlayers().size shouldBe 0
+            } finally {
+                client1.close()
+                client2.close()
+            }
+        }
+    }
 }
 
 @ClientEndpoint(
@@ -217,6 +272,7 @@ class Client {
 
     @OnMessage
     fun message(msg: Message) {
+        // Save all messages exchanged in the connection phase so that I can assert the result of the tests
         EXCHANGED_MESSAGES.add(msg)
     }
 }

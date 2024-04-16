@@ -117,38 +117,33 @@ class WebSocketResource(
         @PathParam("userId") userId: String,
         throwable: Throwable
     ) {
-        logger.error { "Connection Issue | ${throwable.message}" }
-        logger.error { "Connection Issue | ${throwable.localizedMessage}" }
-        logger.error { "Connection Issue | ${throwable.cause}" }
+        logger.error { "Connection Issue | $throwable" }
 
         when (throwable) {
             is GameNotFound -> {
                 session.asyncRemote.sendObject(
                     CommunicationError(userMessage = "Your game has ended unexpectedly. You can report a problem here or try another game from the 'Play' button!")
                 )
-                session.close()
+//                session.close()
             }
 
             is BadCustomGameRequest -> {
                 session.asyncRemote.sendObject(
                     CommunicationError(userMessage = "The game room doesn't exist. Please check with you friend or start another game!")
                 )
-                session.close()
+                // todo: check if session.close() is needed
+//                session.close()
             }
 
             is InvalidGameState -> {
                 // todo: determine if this causes issues for users
-                session.close()
+//                session.close()
             }
 
             else -> {
-                session.close()
+//                session.close()
             }
         }
-        // if error use "session"
-        // 1. send a message to the client saying what happened
-        //      may search game by session so that we can notify both players
-        // 2. session.close()
     }
 }
 
