@@ -4,6 +4,9 @@ quarkus:
     category:
       "io.quarkus":
         level: INFO
+    # https://quarkus.io/guides/logging#logging-format
+    console:
+      format: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] [%c{2.}.%M] %-5p - %s%e%n"
 
 "%staging":
   quarkus:

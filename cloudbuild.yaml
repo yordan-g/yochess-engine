@@ -1,0 +1,7 @@
+steps:
+    # Docker Build
+    - name: 'gcr.io/cloud-builders/docker'
+      args: ['build', '-t', 'europe-west1-docker.pkg.dev/$PROJECT_ID/yochess/backend:cb1', '.']
+    # Docker Push
+    - name: 'gcr.io/cloud-builders/docker'
+      args: ['push', 'europe-west1-docker.pkg.dev/$PROJECT_ID/yochess/backend:cb1']

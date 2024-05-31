@@ -2,11 +2,9 @@ package yochess
 
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.websocket.*
-import jakarta.websocket.server.HandshakeRequest
 import jakarta.websocket.server.PathParam
 import jakarta.websocket.server.ServerEndpoint
-import jakarta.websocket.server.ServerEndpointConfig
-import jakarta.ws.rs.WebApplicationException
+
 import mu.KotlinLogging
 import yochess.dtos.*
 import yochess.services.*
@@ -29,11 +27,11 @@ class WebSocketResource(
         session: Session,
         @PathParam("userId") userId: String
     ) {
+        logger.info { "Open session for User($userId) | Start" }
+
         val rematchGameId = session.requestParameterMap["rematchGameId"]?.firstOrNull()
         val customGameId = session.requestParameterMap["customGameId"]?.firstOrNull()
         val isCreator = session.requestParameterMap["isCreator"]?.firstOrNull()
-
-        logger.info { "rematchGameId -- $rematchGameId | customGameId -- $customGameId | isCreator -- $isCreator" }
 
         when {
             rematchGameId != null -> {
@@ -79,8 +77,6 @@ class WebSocketResource(
                     }
 
                     incomingMessage.rematch == true -> {
-                        logger.info { "Received rematch message ---" }
-
                         gamesService.offerRematch(incomingMessage.gameId, userId)
                     }
 
@@ -94,8 +90,6 @@ class WebSocketResource(
             }
 
             is ChangeName -> {
-                logger.info { "Received ChangeName message for userId: $userId, message: $incomingMessage" }
-
                 gamesService.changePlayerName(userId, incomingMessage)
             }
         }
@@ -106,8 +100,8 @@ class WebSocketResource(
         session: Session,
         @PathParam("userId") userId: String
     ) {
-        logger.info { "Session closed --------------" }
-        // TODO: Could affect closing a game from the UI with request from closeGame()
+        logger.info { "Closing Session for User($userId) | Start" }
+
         gamesService.closeGameUponClientSessionEnd(userId)
     }
 
@@ -117,7 +111,7 @@ class WebSocketResource(
         @PathParam("userId") userId: String,
         throwable: Throwable
     ) {
-        logger.error { "Connection Issue | $throwable" }
+        logger.error { "Connection Issue User($userId) err: $throwable" }
 
         when (throwable) {
             is GameNotFound -> {
@@ -131,12 +125,10 @@ class WebSocketResource(
                 session.asyncRemote.sendObject(
                     CommunicationError(userMessage = "The game room doesn't exist. Please check with you friend or start another game!")
                 )
-                // todo: check if session.close() is needed
 //                session.close()
             }
 
             is InvalidGameState -> {
-                // todo: determine if this causes issues for users
 //                session.close()
             }
 
@@ -147,9 +139,11 @@ class WebSocketResource(
     }
 }
 
-//class CustomConfigurator : ServerEndpointConfig.Configurator() {
-//    override fun modifyHandshake(sec: ServerEndpointConfig?, request: HandshakeRequest?, response: HandshakeResponse?) {
-////        throw WebApplicationException()
-//        super.modifyHandshake(sec, request, response)
-//    }
-//}
+/** Potential config for security
+class CustomConfigurator : ServerEndpointConfig.Configurator() {
+    override fun modifyHandshake(sec: ServerEndpointConfig?, request: HandshakeRequest?, response: HandshakeResponse?) {
+//        throw WebApplicationException()
+        super.modifyHandshake(sec, request, response)
+    }
+}
+*/
