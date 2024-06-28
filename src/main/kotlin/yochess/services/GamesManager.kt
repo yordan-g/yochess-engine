@@ -12,7 +12,7 @@ interface GamesManager {
     fun connectToRematchGame(rematchGameId: String, userId: String, session: Session)
     fun connectToCustomGame(customGameId: String, isCreator: String?, userId: String, session: Session)
     fun broadcast(message: Message)
-    fun closeGame(endMessage: End)
+    fun closeGame(endMessage: End, userId: String)
     fun getGame(gameId: String): Game
     fun offerRematch(gameId: String, userId: String)
     fun changePlayerName(userId: String, changeNameMessage: ChangeName)
@@ -20,6 +20,8 @@ interface GamesManager {
     fun getWaitingPlayers(): LinkedList<Player>
     fun getActiveGames(): HashMap<String, Game>
     fun closeGameUponClientSessionEnd(userId: String)
+    fun offerDraw(gameId: String, userId: String)
+    fun denyDrawOffer(gameId: String, userId: String)
 }
 
 data class GameNotFound(val gameId: String, override val message: String) : RuntimeException(message)
@@ -115,14 +117,22 @@ class DefaultGamesService : GamesManager {
         }
     }
 
-    override fun closeGame(endMessage: End) {
+    override fun closeGame(endMessage: End, userId: String) {
         val gameId = endMessage.gameId
         logger.info { "Closing Connection for Game($gameId) | Start"  }
-
-        broadcast(endMessage)
         // could do a security check if the session matches a session in the active game that needs to be closed
         val removedGame = activeGames.remove(gameId)
             ?: return
+
+        // prevents double rendering for the first player to click close, replacement for the broadcast call.
+        when {
+            removedGame.player1.userId == userId -> {
+                removedGame.player2.session.asyncRemote.sendObject(endMessage.apply { gameOver = removedGame.state.gameOver })
+            }
+            removedGame.player2.userId == userId -> {
+                removedGame.player1.session.asyncRemote.sendObject(endMessage.apply { gameOver = removedGame.state.gameOver })
+            }
+        }
 
         waitingPlayers.remove(removedGame.player1)
         waitingPlayers.remove(removedGame.player2)
@@ -214,11 +224,11 @@ class DefaultGamesService : GamesManager {
         logger.info { "Sending $endMessage" }
 
         activeGames[endMessage.gameId]?.let { game ->
-            game.player1.session.asyncRemote.sendObject(endMessage.apply { this.gameOver = game.state.gameOver })
+            game.player1.session.asyncRemote.sendObject(endMessage.apply { gameOver = game.state.gameOver })
             // When game is in init phase and a player is waiting session is not initialised and if the waiting player leaves,
             // the room can't close properly because session access throws
             if (game.player2.userId != null) {
-                game.player2.session.asyncRemote.sendObject(endMessage.apply { this.gameOver = game.state.gameOver })
+                game.player2.session.asyncRemote.sendObject(endMessage.apply { gameOver = game.state.gameOver })
             }
         }
     }
@@ -236,6 +246,76 @@ class DefaultGamesService : GamesManager {
             activeGames.remove(gameId)
         }
     }
+
+    override fun offerDraw(gameId: String, userId: String) {
+        logger.debug { "User($userId) offering a draw | Start" }
+
+        val currentGame = activeGames[gameId]
+            ?: throw GameNotFound(gameId, "User offers a draw but there is no game in activeGames!").also {
+                logger.error { it.message }
+            }
+
+        when {
+            currentGame.player1.userId == userId -> {
+                if (currentGame.player1.drawOffers > 2) {
+                    currentGame.player1.session.asyncRemote.sendObject(Draw(gameId = gameId, drawLimitExceeded = true))
+                    return
+                }
+                currentGame.player1.offeredDraw = true
+                currentGame.player1.drawOffers = currentGame.player1.drawOffers.inc()
+            }
+            currentGame.player2.userId == userId -> {
+                if (currentGame.player2.drawOffers > 2) {
+                    currentGame.player2.session.asyncRemote.sendObject(Draw(gameId = gameId, drawLimitExceeded = true))
+                    return
+                }
+                currentGame.player2.offeredDraw = true
+                currentGame.player2.drawOffers = currentGame.player2.drawOffers.inc()
+            }
+            else -> throw InvalidGameState("User($userId), tried offering a draw in Game($gameId) but he is not in this game! | End").also {
+                logger.error { it.message }
+            }
+        }
+
+        if (currentGame.player1.offeredDraw && currentGame.player2.offeredDraw) {
+            // for both players to see the Draw dialog state
+            broadcastEnd(
+                End(
+                    gameId = gameId,
+                    ended = true,
+                    gameOver = GameOver(winner = "d", result = "It's a")
+                ).also { currentGame.state.gameOver = it.gameOver })
+
+            return
+        }
+
+        if (currentGame.player1.offeredDraw) {
+            currentGame.player2.session.asyncRemote.sendObject(
+                Draw(gameId = gameId, offerDraw = true)
+            )
+            return
+        }
+
+        if (currentGame.player2.offeredDraw) {
+            currentGame.player1.session.asyncRemote.sendObject(
+                Draw(gameId = gameId, offerDraw = true)
+            )
+            return
+        }
+    }
+
+    override fun denyDrawOffer(gameId: String, userId: String) {
+        logger.debug { "User($userId) denies draw offer | Start" }
+
+        val currentGame = activeGames[gameId]
+            ?: throw GameNotFound(gameId, "User wants to deny draw offer but there is no game in activeGames!").also {
+                logger.error { it.message }
+            }
+
+        // reset the state of previous offers
+        currentGame.player1.offeredDraw = false
+        currentGame.player2.offeredDraw = false
+    }
 }
 
 enum class GamePhase { INIT, START }
@@ -251,6 +331,8 @@ data class Player(
     var userId: String? = null,
     var username: String? = null,
     var color: Color,
+    var offeredDraw: Boolean = false,
+    var drawOffers: Int = 0,
     var offeredRematch: Boolean = false,
     var connectedToRematch: Boolean = false
 ) {

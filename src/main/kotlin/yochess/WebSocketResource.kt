@@ -69,11 +69,11 @@ class WebSocketResource(
             is End -> {
                 when {
                     incomingMessage.leftGame == true -> {
-                        gamesService.closeGame(incomingMessage)
+                        gamesService.closeGame(incomingMessage, userId)
                     }
 
                     incomingMessage.close == true -> {
-                        gamesService.closeGame(incomingMessage)
+                        gamesService.closeGame(incomingMessage, userId)
                     }
 
                     incomingMessage.rematch == true -> {
@@ -87,6 +87,18 @@ class WebSocketResource(
 
                     else -> gamesService.broadcast(incomingMessage)
                 }
+            }
+
+            is Draw -> {
+                when {
+                    incomingMessage.offerDraw -> {
+                        gamesService.offerDraw(incomingMessage.gameId, userId)
+                    }
+                    incomingMessage.denyDraw -> {
+                        gamesService.denyDrawOffer(incomingMessage.gameId, userId)
+                    }
+                }
+
             }
 
             is ChangeName -> {
@@ -118,23 +130,15 @@ class WebSocketResource(
                 session.asyncRemote.sendObject(
                     CommunicationError(userMessage = "Your game has ended unexpectedly. You can report a problem here or try another game from the 'Play' button!")
                 )
-//                session.close()
             }
 
             is BadCustomGameRequest -> {
                 session.asyncRemote.sendObject(
                     CommunicationError(userMessage = "The game room doesn't exist. Please check with you friend or start another game!")
                 )
-//                session.close()
             }
-
-            is InvalidGameState -> {
-//                session.close()
-            }
-
-            else -> {
-//                session.close()
-            }
+            is InvalidGameState -> {}
+            else -> {}
         }
     }
 }

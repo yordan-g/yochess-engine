@@ -14,6 +14,7 @@ import yochess.services.GamePhase
     JsonSubTypes.Type(value = Init::class, name = "INIT"),
     JsonSubTypes.Type(value = Move::class, name = "MOVE"),
     JsonSubTypes.Type(value = End::class, name = "END"),
+    JsonSubTypes.Type(value = Draw::class, name = "DRAW"),
     JsonSubTypes.Type(value = ChangeName::class, name = "CHANGE_NAME"),
     JsonSubTypes.Type(value = CommunicationError::class, name = "COMMUNICATION_ERROR"),
 )
@@ -56,6 +57,14 @@ data class End(
     val rematchGameId: String? = null,
     var gameOver: GameOver? = null
 ) : Message()
+
+data class Draw(
+    val kind: String = "DRAW",
+    val gameId: String,
+    val offerDraw: Boolean = false,
+    val denyDraw: Boolean = false,
+    val drawLimitExceeded: Boolean = false
+): Message()
 
 data class ChangeName(
     val kind: String = "CHANGE_NAME",

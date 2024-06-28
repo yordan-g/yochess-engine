@@ -3,6 +3,7 @@ package yochess
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.kotest.matchers.types.shouldNotBeInstanceOf
 import io.quarkus.test.common.http.TestHTTPResource
 import io.quarkus.test.junit.QuarkusTest
 import io.quarkus.test.junit.mockito.InjectSpy
@@ -128,6 +129,70 @@ class WebSocketResourceTests {
             }
         }
 
+        @Test
+        fun `DRAW - WHEN one player offers a draw THEN only 1 draw message is sent back for the other player`() {
+            val client1 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player1"))
+            Thread.sleep(1000)
+            val client2 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player2"))
+            Thread.sleep(1000)
+
+            try {
+                val message0 = EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS) as Init
+
+                client1.basicRemote.sendObject(Draw(gameId = message0.gameId, offerDraw = true))
+                Thread.sleep(1000)
+
+                EXCHANGED_MESSAGES.pollLast(1, TimeUnit.SECONDS).also { message1 ->
+                    message1.shouldBeInstanceOf<Draw>()
+                    message1.offerDraw shouldBe true
+                    message1.gameId shouldBe message0.gameId
+                }
+                EXCHANGED_MESSAGES.pollLast(1, TimeUnit.SECONDS).also { message2 ->
+                    message2.shouldNotBeInstanceOf<Draw>()
+                }
+
+            } finally {
+                client1.close()
+                client2.close()
+            }
+        }
+
+        @Test
+        fun `DRAW - WHEN both players offer a draw THEN 2 End messages and 1 Draw are sent back`() {
+            val client1 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player1"))
+            Thread.sleep(1000)
+            val client2 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player2"))
+            Thread.sleep(1000)
+
+            try {
+                val message0 = EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS) as Init
+
+                client1.basicRemote.sendObject(Draw(gameId = message0.gameId, offerDraw = true))
+                Thread.sleep(1000)
+                client2.basicRemote.sendObject(Draw(gameId = message0.gameId, offerDraw = true))
+                Thread.sleep(1000)
+
+                EXCHANGED_MESSAGES.pollLast(1, TimeUnit.SECONDS).also { endM1 ->
+                    endM1.shouldBeInstanceOf<End>()
+                    endM1.gameId shouldBe message0.gameId
+                    endM1.ended shouldBe true
+                    endM1.gameOver?.winner shouldBe "d"
+                    endM1.gameOver?.result shouldBe "It's a"
+                }
+                EXCHANGED_MESSAGES.pollLast(1, TimeUnit.SECONDS).also { endM2 ->
+                    endM2.shouldBeInstanceOf<End>()
+                }
+                EXCHANGED_MESSAGES.pollLast(1, TimeUnit.SECONDS).also { drawM1 ->
+                    drawM1.shouldBeInstanceOf<Draw>()
+                }
+            } finally {
+                client1.close()
+                client2.close()
+            }
+        }
+
+        // TODO: write a drawOffers test
+
         private fun verifyInvocationsForRandomGame(timesInvoked: Int) {
             Mockito.verify(gamesManager, times(timesInvoked)).connectToRandomGame(any(), any())
             Mockito.verify(gamesManager, times(0)).connectToCustomGame(any(), any(), any(), any())
@@ -149,18 +214,18 @@ class WebSocketResourceTests {
 
             try {
                 // Setup current random game
-                val message1 = EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS) as Init
+                val message0 = EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS) as Init
 
                 // Send messages from the client to End the current game and offer rematch.
-                client2.basicRemote.sendObject(End(gameId = message1.gameId, ended = true))
-                client1.basicRemote.sendObject(End(gameId = message1.gameId, rematch = true))
-                client2.basicRemote.sendObject(End(gameId = message1.gameId, rematch = true))
+                client2.basicRemote.sendObject(End(gameId = message0.gameId, ended = true))
+                client1.basicRemote.sendObject(End(gameId = message0.gameId, rematch = true))
+                client2.basicRemote.sendObject(End(gameId = message0.gameId, rematch = true))
                 // Allow messages from above to complete
                 Thread.sleep(1000)
 
                 val responseRematchMessageFromServer = EXCHANGED_MESSAGES.last
                 responseRematchMessageFromServer.shouldBeInstanceOf<End>()
-                responseRematchMessageFromServer.gameId shouldBe message1.gameId
+                responseRematchMessageFromServer.gameId shouldBe message0.gameId
                 responseRematchMessageFromServer.rematchSuccess shouldBe true
                 responseRematchMessageFromServer.rematchGameId.shouldNotBeNull()
 
@@ -173,7 +238,7 @@ class WebSocketResourceTests {
                 Thread.sleep(1000)
                 client4 = wsEndpoint.connectToServer(
                     Client::class.java,
-                    URI("${baseWsEndpointUrl}/player1?rematchGameId=${responseRematchMessageFromServer.rematchGameId}")
+                    URI("${baseWsEndpointUrl}/player2?rematchGameId=${responseRematchMessageFromServer.rematchGameId}")
                 )
                 Thread.sleep(1000)
 
