@@ -100,6 +100,16 @@ class WebSocketResource(
                 }
 
             }
+            is Resign -> {
+                when {
+                    incomingMessage.requestedResignation -> {
+                        gamesService.requestResignation(incomingMessage.gameId, userId)
+                    }
+                    incomingMessage.resignationConfirmed -> {
+                        gamesService.resignationConfirm(incomingMessage.gameId, userId)
+                    }
+                }
+            }
 
             is ChangeName -> {
                 gamesService.changePlayerName(userId, incomingMessage)

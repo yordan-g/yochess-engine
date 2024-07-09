@@ -22,6 +22,8 @@ interface GamesManager {
     fun closeGameUponClientSessionEnd(userId: String)
     fun offerDraw(gameId: String, userId: String)
     fun denyDrawOffer(gameId: String, userId: String)
+    fun requestResignation(gameId: String, userId: String)
+    fun resignationConfirm(gameId: String, userId: String)
 }
 
 data class GameNotFound(val gameId: String, override val message: String) : RuntimeException(message)
@@ -315,6 +317,53 @@ class DefaultGamesService : GamesManager {
         // reset the state of previous offers
         currentGame.player1.offeredDraw = false
         currentGame.player2.offeredDraw = false
+    }
+
+    override fun requestResignation(gameId: String, userId: String) {
+        logger.debug { "User($userId) requested to resign | Start" }
+
+        val currentGame = activeGames[gameId]
+            ?: throw GameNotFound(gameId, "User requested to resign but there is no game in activeGames!").also {
+                logger.error { it.message }
+            }
+
+        when {
+            currentGame.player1.userId == userId -> {
+                currentGame.player1.session.asyncRemote.sendObject(Resign(gameId = gameId, requestedResignation = true))
+            }
+            currentGame.player2.userId == userId -> {
+                currentGame.player2.session.asyncRemote.sendObject(Resign(gameId = gameId, requestedResignation = true))
+            }
+        }
+    }
+
+    override fun resignationConfirm(gameId: String, userId: String) {
+        logger.debug { "User($userId) confirmed to resign | Start" }
+
+        val currentGame = activeGames[gameId]
+            ?: throw GameNotFound(gameId, "User confirmed to resign but there is no game in activeGames!").also {
+                logger.error { it.message }
+            }
+
+        val resignee = when {
+            currentGame.player1.userId == userId -> currentGame.player1
+            currentGame.player2.userId == userId -> currentGame.player2
+            else -> throw InvalidGameState("User confirmed to resign but he is not in this game!")
+        }
+
+        val winner = when (resignee.color) {
+            Color.W -> "b"
+            Color.B -> "w"
+        }
+
+        broadcastEnd(End(
+            gameId = gameId,
+            ended = true,
+            gameOver = GameOver(
+                winner = winner,
+                result = "${resignee.username} resigned!"
+            )
+        ).also { currentGame.state.gameOver = it.gameOver })
     }
 }
 

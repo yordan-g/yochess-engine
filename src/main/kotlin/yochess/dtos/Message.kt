@@ -15,6 +15,7 @@ import yochess.services.GamePhase
     JsonSubTypes.Type(value = Move::class, name = "MOVE"),
     JsonSubTypes.Type(value = End::class, name = "END"),
     JsonSubTypes.Type(value = Draw::class, name = "DRAW"),
+    JsonSubTypes.Type(value = Resign::class, name = "RESIGN"),
     JsonSubTypes.Type(value = ChangeName::class, name = "CHANGE_NAME"),
     JsonSubTypes.Type(value = CommunicationError::class, name = "COMMUNICATION_ERROR"),
 )
@@ -64,6 +65,13 @@ data class Draw(
     val offerDraw: Boolean = false,
     val denyDraw: Boolean = false,
     val drawLimitExceeded: Boolean = false
+): Message()
+
+data class Resign(
+    val kind: String = "RESIGN",
+    val gameId: String,
+    val requestedResignation: Boolean = false,
+    val resignationConfirmed: Boolean = false,
 ): Message()
 
 data class ChangeName(
