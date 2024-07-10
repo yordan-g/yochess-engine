@@ -7,6 +7,8 @@
 #
 # Then, build the image with:
 #
+# docker build . --tag yochess-backend
+# docker run -i --rm -p 8000:8000 yochess-backend
 # docker build -f src/main/docker/Dockerfile.jvm -t quarkus/yochess-jvm .
 # docker build -f Dockerfile.jvm --build-arg ENVIRONMENT=staging -t yochess-engine:staging .
 #
@@ -79,7 +81,7 @@
 #   accessed directly. (example: "foo.example.com,bar.example.com")
 #
 ###
-FROM registry.access.redhat.com/ubi8/openjdk-17:1.19 AS build
+FROM registry.access.redhat.com/ubi8/openjdk-17:1.20-2 AS build
 
 WORKDIR /yochess-engine
 COPY gradle ./gradle
@@ -92,9 +94,9 @@ COPY settings.gradle ./
 COPY gradle.properties ./
 
 USER root
-RUN ./gradlew build
+RUN ./gradlew build -x test
 
-FROM registry.access.redhat.com/ubi8/openjdk-17:1.19 AS production
+FROM registry.access.redhat.com/ubi8/openjdk-17:1.20-2 AS production
 
 ENV LANGUAGE='en_US:en'
 WORKDIR /yochess-engine

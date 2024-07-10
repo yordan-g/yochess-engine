@@ -1,7 +1,7 @@
 plugins {
-    id 'org.jetbrains.kotlin.jvm' version "1.8.21"
-    id "org.jetbrains.kotlin.plugin.allopen" version "1.8.21"
-    id 'io.quarkus'
+    id "org.jetbrains.kotlin.jvm" version "2.0.0"
+    id "org.jetbrains.kotlin.plugin.allopen" version "2.0.0"
+    id "io.quarkus"
 }
 
 repositories {
@@ -11,30 +11,30 @@ repositories {
 
 dependencies {
     implementation enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}")
-    implementation 'io.quarkus:quarkus-arc'
-    implementation 'io.quarkus:quarkus-resteasy'
-    implementation 'io.quarkus:quarkus-resteasy-jackson'
-    implementation 'com.fasterxml.jackson.module:jackson-module-kotlin'
+    implementation "io.quarkus:quarkus-arc"
+    implementation "io.quarkus:quarkus-resteasy"
+    implementation "io.quarkus:quarkus-resteasy-jackson"
+    implementation "com.fasterxml.jackson.module:jackson-module-kotlin"
 
-    implementation 'io.quarkus:quarkus-websockets'
+    implementation "io.quarkus:quarkus-websockets"
 
-    implementation 'io.quarkus:quarkus-kotlin'
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'
+    implementation "io.quarkus:quarkus-kotlin"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
 
-    implementation 'io.quarkus:quarkus-config-yaml'
+    implementation "io.quarkus:quarkus-config-yaml"
 
-    implementation 'io.github.microutils:kotlin-logging:3.0.5'
+    implementation "io.github.microutils:kotlin-logging:3.0.5"
 
-    testImplementation 'io.quarkus:quarkus-junit5'
-    testImplementation 'io.quarkus:quarkus-junit5-mockito'
-    testImplementation 'org.mockito.kotlin:mockito-kotlin:3.2.0'
+    testImplementation "io.quarkus:quarkus-junit5"
+    testImplementation "io.quarkus:quarkus-junit5-mockito"
+    testImplementation "org.mockito.kotlin:mockito-kotlin:3.2.0"
 
-    testImplementation 'io.rest-assured:rest-assured'
-    testImplementation 'io.kotest:kotest-assertions-core:5.8.0'
+    testImplementation "io.rest-assured:rest-assured"
+    testImplementation "io.kotest:kotest-assertions-core:5.8.0"
 }
 
-group 'yochess'
-version '1.0.0'
+group "yochess"
+version "1.0.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
