@@ -126,10 +126,12 @@ class DefaultGamesService : GamesManager {
         val removedGame = activeGames.remove(gameId)
             ?: return
 
-        // prevents double rendering for the first player to click close, replacement for the broadcast call.
         when {
             removedGame.player1.userId == userId -> {
-                removedGame.player2.session.asyncRemote.sendObject(endMessage.apply { gameOver = removedGame.state.gameOver })
+                // if player2 has not connected session is uninitialized
+                if (removedGame.player2.userId != null) {
+                    removedGame.player2.session.asyncRemote.sendObject(endMessage.apply { gameOver = removedGame.state.gameOver })
+                }
             }
             removedGame.player2.userId == userId -> {
                 removedGame.player1.session.asyncRemote.sendObject(endMessage.apply { gameOver = removedGame.state.gameOver })
@@ -143,7 +145,10 @@ class DefaultGamesService : GamesManager {
             removedGame.player1.session.close()
         }
         if (removedGame.player2.session.isOpen) {
-            removedGame.player2.session.close()
+            // if player2 has not connected session is uninitialized
+            if (removedGame.player2.userId != null) {
+                removedGame.player2.session.close()
+            }
         }
     }
 
@@ -317,10 +322,15 @@ class DefaultGamesService : GamesManager {
         // reset the state of previous offers
         currentGame.player1.offeredDraw = false
         currentGame.player2.offeredDraw = false
+
+        Draw(gameId = gameId, offerDraw = false).let {
+            currentGame.player1.session.asyncRemote.sendObject(it)
+            currentGame.player2.session.asyncRemote.sendObject(it)
+        }
     }
 
     override fun requestResignation(gameId: String, userId: String) {
-        logger.debug { "User($userId) requested to resign | Start" }
+        logger.info { "User($userId) requested to resign | Start" }
 
         val currentGame = activeGames[gameId]
             ?: throw GameNotFound(gameId, "User requested to resign but there is no game in activeGames!").also {
