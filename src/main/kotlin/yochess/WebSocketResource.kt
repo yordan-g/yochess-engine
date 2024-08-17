@@ -114,6 +114,10 @@ class WebSocketResource(
             is ChangeName -> {
                 gamesService.changePlayerName(userId, incomingMessage)
             }
+
+            is ChatEntries -> {
+                gamesService.handleChatMessage(incomingMessage.gameId, userId, incomingMessage)
+            }
         }
     }
 

@@ -24,6 +24,7 @@ interface GamesManager {
     fun denyDrawOffer(gameId: String, userId: String)
     fun requestResignation(gameId: String, userId: String)
     fun resignationConfirm(gameId: String, userId: String)
+    fun handleChatMessage(gameId: String, userId: String, incomingMessage: ChatEntries)
 }
 
 data class GameNotFound(val gameId: String, override val message: String) : RuntimeException(message)
@@ -375,6 +376,25 @@ class DefaultGamesService : GamesManager {
             )
         ).also { currentGame.state.gameOver = it.gameOver })
     }
+
+    override fun handleChatMessage(gameId: String, userId: String, incomingMessage: ChatEntries) {
+        logger.debug { "User($userId) sent a chat message | Start" }
+
+        val currentGame = activeGames[gameId]
+            ?: throw GameNotFound(gameId, "User tries to sent a chat message but there is no game in activeGames!").also {
+                logger.error { it.message }
+            }
+
+        if (incomingMessage.entries.firstOrNull() == null) {
+            logger.warn { "User tries to sent a chat message but the request is empty" }
+            return
+        }
+
+        currentGame.chatState.add(incomingMessage.entries.first())
+
+        currentGame.player1.session.asyncRemote.sendObject(ChatEntries(entries = currentGame.chatState))
+        currentGame.player2.session.asyncRemote.sendObject(ChatEntries(entries = currentGame.chatState))
+    }
 }
 
 enum class GamePhase { INIT, START }
@@ -384,6 +404,7 @@ data class Game(
     val player2: Player,
 ) {
     val state: GameState = GameState()
+    val chatState: MutableList<ChatEntry> = mutableListOf()
 }
 
 data class Player(
