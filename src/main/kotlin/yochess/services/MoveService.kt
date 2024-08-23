@@ -7,6 +7,7 @@ import yochess.services.GameState.Companion.DIRECTIONS
 import yochess.services.GameState.Companion.EMPTY_MOVE_REQUEST
 import yochess.services.XY.Companion.idxToFile
 import yochess.services.XY.Companion.idxToRank
+import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
 import kotlin.math.max
@@ -846,33 +847,42 @@ enum class Color(private val value: String) {
 }
 
 class Clock {
-    private var white = 500L
-    private var black = 500L
-    private var startTime: Long = System.currentTimeMillis()
+    private var white = 420000L
+    private var black = 420000L
+    private var startTime: Long = 1
+    private val logger = KotlinLogging.logger {}
+
+    fun start() { startTime = System.currentTimeMillis() }
 
     fun endPlayerTurn(turn: Color): Time {
+//        logger.info { "lastTurn was ($turn) | startTime - '${startTime.toHHMMSS()}'" }
         val currentTime = System.currentTimeMillis()
-        val timeSpent = (currentTime - startTime) / 1000 // Convert to seconds
-
-        when (turn) {
-            Color.W -> white = white - timeSpent + DEFAULT_INCREMENT
-            else -> black = black - timeSpent + DEFAULT_INCREMENT
-        }
+        val timeSpent = currentTime - startTime
 
         // Switch turns and update startTime for the next player
+        when (turn) {
+            Color.W -> white = white - timeSpent + DEFAULT_INCREMENT_MS
+            else -> black = black - timeSpent + DEFAULT_INCREMENT_MS
+        }
+
         startTime = System.currentTimeMillis()
 
-        return Time(white, black)
+        return Time(white / 1000, black / 1000)
+    }
+
+    private fun Long.toHHMMSS(): String {
+        val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+        return timeFormat.format(Date(this))
     }
 
     companion object {
-        private const val DEFAULT_INCREMENT = 5L
+        private const val DEFAULT_INCREMENT_MS = 5000L
     }
 }
 
 class GameState {
     val board: Array<Array<Piece>> = initBoard()
-    private val clock = Clock()
+    val clock = Clock()
     var turn: Color = Color.W
     var enPassantTarget: XY? = null
     var gameOver: GameOver? = null

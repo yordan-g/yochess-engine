@@ -60,6 +60,7 @@ class DefaultGamesService : GamesManager {
                 game.player2.session = session
                 game.player1.session.asyncRemote.sendObject(Init(type = GamePhase.START, gameId = gameId, color = game.player1.color.lowercase()))
                 game.player2.session.asyncRemote.sendObject(Init(type = GamePhase.START, gameId = gameId, color = game.player2.color.lowercase()))
+                game.state.clock.start()
             }
         }.also {
             logger.info { "User($userId) connected to game | Exit" }
@@ -116,6 +117,7 @@ class DefaultGamesService : GamesManager {
                 game.player2.session = session
                 game.player1.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = game.player1.color.lowercase(), gameId = customGameId))
                 game.player2.session.asyncRemote.sendObject(Init(type = GamePhase.START, color = game.player2.color.lowercase(), gameId = customGameId))
+                game.state.clock.start()
             }
         }
     }
@@ -180,6 +182,7 @@ class DefaultGamesService : GamesManager {
             )
             currentGame.player1.session.asyncRemote.sendObject(End(gameId = gameId, rematchSuccess = true, rematchGameId = rematchGameId))
             currentGame.player2.session.asyncRemote.sendObject(End(gameId = gameId, rematchSuccess = true, rematchGameId = rematchGameId))
+            activeGames[rematchGameId]?.state?.clock?.start()
 
             logger.info { "Rematch accepted, starting a new Game($rematchGameId) | Exit" }
         }
