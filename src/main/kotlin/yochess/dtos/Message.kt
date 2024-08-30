@@ -19,6 +19,8 @@ import yochess.services.GamePhase
     JsonSubTypes.Type(value = ChangeName::class, name = "CHANGE_NAME"),
     JsonSubTypes.Type(value = CommunicationError::class, name = "COMMUNICATION_ERROR"),
     JsonSubTypes.Type(value = ChatEntries::class, name = "CHAT_ENTRIES"),
+    JsonSubTypes.Type(value = Ping::class, name = "PING"),
+    JsonSubTypes.Type(value = Pong::class, name = "PONG"),
 )
 sealed class Message
 
@@ -92,6 +94,16 @@ data class ChatEntries(
     val gameId: String = "default",
     val entries: MutableList<ChatEntry>
 ): Message()
+
+data class Ping(
+    val kind: String = "PING",
+    val text: String = "ping",
+): Message()
+
+data class Pong(
+    val kind: String = "PONG",
+    val text: String = "pong",
+) : Message()
 
 data class ChatEntry(
     val username: String,

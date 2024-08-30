@@ -49,6 +49,7 @@ class WebSocketResource(
     @OnMessage
     fun onMessage(
         incomingMessage: Message,
+        session: Session,
         @PathParam("userId") userId: String
     ) {
         when (incomingMessage) {
@@ -118,6 +119,8 @@ class WebSocketResource(
             is ChatEntries -> {
                 gamesService.handleChatMessage(incomingMessage.gameId, userId, incomingMessage)
             }
+            is Ping -> session.asyncRemote.sendObject(Pong())
+            else -> {}
         }
     }
 

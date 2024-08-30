@@ -129,15 +129,18 @@ class DefaultGamesService : GamesManager {
         val removedGame = activeGames.remove(gameId)
             ?: return
 
+        // todo: Revisit and test this, is the when needed?
         when {
             removedGame.player1.userId == userId -> {
                 // if player2 has not connected session is uninitialized
                 if (removedGame.player2.userId != null) {
                     removedGame.player2.session.asyncRemote.sendObject(endMessage.apply { gameOver = removedGame.state.gameOver })
                 }
+                removedGame.player1.session.asyncRemote.sendObject(endMessage.apply { gameOver = removedGame.state.gameOver })
             }
             removedGame.player2.userId == userId -> {
                 removedGame.player1.session.asyncRemote.sendObject(endMessage.apply { gameOver = removedGame.state.gameOver })
+                removedGame.player2.session.asyncRemote.sendObject(endMessage.apply { gameOver = removedGame.state.gameOver })
             }
         }
 
