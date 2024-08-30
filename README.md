@@ -2,7 +2,7 @@
 
 The backend server for - https://www.yochess.net.
 
-Responsible for running the game management and chess game rules logic for the [Yochess] project.
+Responsible for running the game management and chess game rules logic for the [Yochess][yochess-ui] project.
 
 ## License for the project
 
@@ -28,4 +28,5 @@ If you are interested in running the project locally follow [this guide here](do
 
 
 [Yochess]: https://www.yochess.net
+[yochess-ui]: https://github.com/yordan-g/yochess-ui
 [Quarkus]: https://quarkus.io/
