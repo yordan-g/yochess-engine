@@ -101,6 +101,10 @@ FROM registry.access.redhat.com/ubi8/openjdk-17:1.20-2 AS production
 ENV LANGUAGE='en_US:en'
 WORKDIR /yochess-engine
 
+USER root
+RUN microdnf install -y wget && \
+    microdnf clean all
+
 # We make four distinct layers so if there are application changes the library layers can be re-used
 COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/lib/ /deployments/lib/
 COPY --from=build --chown=185 /yochess-engine/build/quarkus-app/*.jar /deployments/
@@ -111,3 +115,6 @@ EXPOSE 8080
 USER 185
 ENV JAVA_OPTS="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
 ENV JAVA_APP_JAR="/deployments/quarkus-run.jar"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/q/health/live" || exit 1
