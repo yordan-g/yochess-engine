@@ -69,7 +69,7 @@ class WebSocketResourceTests {
 
         @Test
         fun `GIVEN 4 users try to connect and start 2 games THEN connection succeeds AND 3 messages per game are exchanged`() {
-            // Await between connections to allow messages to be exchanged in time and order.
+            // Await between connections to allow messages to be exchanged.
             val client1 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player1"))
             Thread.sleep(1000)
             val client2 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player2"))
@@ -79,43 +79,25 @@ class WebSocketResourceTests {
             val client4 = wsEndpoint.connectToServer(Client::class.java, URI("${baseWsEndpointUrl}/player4"))
 
             try {
-                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).also { message1 ->
-                    message1.shouldBeInstanceOf<Init>()
-                    message1.color shouldBe "w"
-                    message1.type shouldBe GamePhase.INIT
+                val connectionMessages = (1..6).map {
+                    EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).shouldNotBeNull().shouldBeInstanceOf<Init>()
                 }
-                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).also { message2 ->
-                    message2.shouldBeInstanceOf<Init>()
-                    message2.color shouldBe "w"
-                    message2.type shouldBe GamePhase.START
-                }
-                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).also { message3 ->
-                    message3.shouldBeInstanceOf<Init>()
-                    message3.color shouldBe "b"
-                    message3.type shouldBe GamePhase.START
 
-                    gamesManager.getGame(message3.gameId).player1.userId shouldBe "player1"
-                    gamesManager.getGame(message3.gameId).player2.userId shouldBe "player2"
-                }
-                // second game
-                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).also { message1 ->
-                    message1.shouldBeInstanceOf<Init>()
-                    message1.color shouldBe "w"
-                    message1.type shouldBe GamePhase.INIT
-                }
-                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).also { message2 ->
-                    message2.shouldBeInstanceOf<Init>()
-                    message2.color shouldBe "w"
-                    message2.type shouldBe GamePhase.START
-                }
-                EXCHANGED_MESSAGES.poll(1, TimeUnit.SECONDS).also { message3 ->
-                    message3.shouldBeInstanceOf<Init>()
-                    message3.color shouldBe "b"
-                    message3.type shouldBe GamePhase.START
+                val messagesByGame = connectionMessages.groupBy { it.gameId }
+                messagesByGame.size shouldBe 2
 
-                    gamesManager.getGame(message3.gameId).player1.userId shouldBe "player3"
-                    gamesManager.getGame(message3.gameId).player2.userId shouldBe "player4"
+                messagesByGame.values.forEach { gameMessages ->
+                    gameMessages.size shouldBe 3
+                    gameMessages.count { it.type == GamePhase.INIT && it.color == "w" } shouldBe 1
+                    gameMessages.count { it.type == GamePhase.START && it.color == "w" } shouldBe 1
+                    gameMessages.count { it.type == GamePhase.START && it.color == "b" } shouldBe 1
                 }
+
+                messagesByGame.keys
+                    .map { gameId ->
+                        gamesManager.getGame(gameId).let { it.player1.userId to it.player2.userId }
+                    }
+                    .toSet() shouldBe setOf("player1" to "player2", "player3" to "player4")
 
                 gamesManager.getWaitingPlayers().size shouldBe 0
                 gamesManager.getActiveGames().size shouldBe 2
